@@ -743,26 +743,36 @@ public class MainActivity extends Activity {
         if (selectedFrame == null || !selectedFrame.equals(builtInFrameUri(
                 layout.colWidths.length * layout.rowHeights.length))) return layout;
         int count = layout.colWidths.length * layout.rowHeights.length;
-        int cols = layout.colWidths.length, rows = layout.rowHeights.length;
-        float windowWidth = (2400f - 340f - (cols - 1) * 58f) / cols;
-        float windowHeight = (3070f - 560f - (rows - 1) * 62f) / rows;
+        Rect[] sourceWindows = builtInWindows(count);
         Rect[] windows = new Rect[count];
         for (int i = 0; i < count; i++) {
-            int col = i % cols, row = i / cols;
-            float originalLeft = 170f + col * (windowWidth + 58f);
-            float originalTop = 560f + row * (windowHeight + 62f);
+            Rect source = sourceWindows[i];
             float scaledLeft = layout.width * ((1f - frameScale) / 2f
-                    + frameScale * originalLeft / 2400f);
+                    + frameScale * source.left / 1024f);
             float scaledRight = layout.width * ((1f - frameScale) / 2f
-                    + frameScale * (originalLeft + windowWidth) / 2400f);
+                    + frameScale * source.right / 1024f);
             int left = Math.max(0, Math.round(scaledLeft));
             int right = Math.min(layout.width, Math.round(scaledRight));
-            int top = Math.max(0, Math.round(layout.height * originalTop / 3552f));
+            int top = Math.max(0, Math.round(layout.height * source.top / 1536f));
             int bottom = Math.min(layout.height,
-                    Math.round(layout.height * (originalTop + windowHeight) / 3552f));
+                    Math.round(layout.height * source.bottom / 1536f));
             windows[i] = new Rect(left, top, right, bottom);
         }
         return new Layout(layout.width, layout.height, layout.colWidths, layout.rowHeights, windows);
+    }
+
+    private Rect[] builtInWindows(int count) {
+        if (count == 1) return new Rect[]{new Rect(82, 215, 941, 1334)};
+        if (count == 2) return new Rect[]{
+                new Rect(81, 213, 942, 755), new Rect(81, 793, 942, 1333)};
+        if (count == 8) return new Rect[]{
+                new Rect(81, 213, 493, 476), new Rect(530, 213, 943, 476),
+                new Rect(80, 510, 493, 755), new Rect(530, 510, 943, 755),
+                new Rect(81, 792, 493, 1035), new Rect(530, 792, 943, 1035),
+                new Rect(81, 1070, 493, 1334), new Rect(530, 1070, 943, 1334)};
+        return new Rect[]{
+                new Rect(80, 213, 493, 755), new Rect(529, 213, 942, 755),
+                new Rect(80, 793, 493, 1335), new Rect(529, 793, 942, 1335)};
     }
 
     private Size rawSize(Uri uri) throws IOException {

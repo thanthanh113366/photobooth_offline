@@ -22,7 +22,7 @@ GitHub Actions đã có thể tạo APK mà không cần cài Android Studio tr�
 
 ## Khung có sẵn
 
-Bốn khung đen vàng vintage độ phân giải 2400 × 3552 px, có cửa sổ ảnh trong suốt thật, nằm trong APK và tự đổi theo chế độ. SVG nguồn được giữ trong thư mục `frames/`, cùng công cụ tạo PNG ở `tools/generate_graduation_frames.py`. [Khung bốn ảnh ban đầu](frames/graduation-uit-haminhtruong-vintage-black.png) vẫn có trong repository để dùng riêng.
+Bốn khung đen vàng vintage độ phân giải 1024 × 1536 px, có cửa sổ ảnh trong suốt thật, nằm trong APK và tự đổi theo chế độ. Khung 4 ảnh là [đúng ảnh mẫu ban đầu](frames/graduation-uit-haminhtruong-vintage-black.png); các khung 1, 2 và 8 ảnh được tạo theo cùng ảnh đó. Từng PNG cũng có trong thư mục `frames/` để dùng riêng.
 
 ## Tạo APK bằng GitHub Actions (không cài Android Studio)
 
