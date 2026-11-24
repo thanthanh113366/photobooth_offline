@@ -15,6 +15,7 @@ import android.graphics.RectF;
 import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.provider.OpenableColumns;
 import android.database.Cursor;
 import android.view.MotionEvent;
@@ -31,6 +32,7 @@ import java.io.OutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -327,14 +329,22 @@ public class MainActivity extends Activity {
         PhotoEdit[] selectedEdits = new PhotoEdit[4];
         for (int i = 0; i < 4; i++) selectedEdits[i] = edits[i].copy();
         worker.execute(() -> {
+            long started = SystemClock.elapsedRealtime();
             try {
                 Layout layout = inspect(selected);
+                RenderStats stats;
                 try (OutputStream stream = getContentResolver().openOutputStream(destination, "w")) {
                     if (stream == null) throw new IOException("Không mở được tệp PNG để ghi.");
-                    renderTiled(selected, selectedFrame, layout, selectedEdits,
+                    stats = renderTiled(selected, selectedFrame, layout, selectedEdits,
                             selectedFrameWidth, stream);
                 }
-                runOnUiThread(() -> status.setText("Đã lưu PNG " + layout.width + " × " + layout.height + " px."));
+                long total = SystemClock.elapsedRealtime() - started;
+                String summary = String.format(Locale.getDefault(),
+                        "Đã lưu PNG %d × %d px · Tổng %.1f giây\n"
+                                + "Chuẩn bị %.1f · Ghép ảnh %.1f · Khung %.1f · Nén/ghi PNG %.1f giây",
+                        layout.width, layout.height, total / 1000.0, stats.setupMs / 1000.0,
+                        stats.photoMs / 1000.0, stats.frameMs / 1000.0, stats.pngMs / 1000.0);
+                runOnUiThread(() -> status.setText(summary));
             } catch (Exception | OutOfMemoryError e) {
                 runOnUiThread(() -> status.setText("Xuất ảnh thất bại: " + e.getMessage()));
             } finally {
@@ -343,9 +353,11 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void renderTiled(List<Uri> selected, Uri selectedFrame, Layout layout,
-                             PhotoEdit[] selectedEdits, float selectedFrameWidth, OutputStream stream)
+    private RenderStats renderTiled(List<Uri> selected, Uri selectedFrame, Layout layout,
+                                    PhotoEdit[] selectedEdits, float selectedFrameWidth, OutputStream stream)
             throws IOException {
+        RenderStats stats = new RenderStats();
+        long setupStart = SystemClock.elapsedRealtime();
         Source[] sources = new Source[4];
         Source overlay = null;
         Bitmap fittedFrame = null;
@@ -374,13 +386,17 @@ public class MainActivity extends Activity {
             int[] pixels = new int[layout.width];
             LosslessPngWriter writer = new LosslessPngWriter(stream, layout.width, layout.height,
                     10.0, 14.8);
+            stats.setupMs = SystemClock.elapsedRealtime() - setupStart;
             try {
                 int lastProgress = -1;
                 for (int top = 0; top < layout.height; ) {
                     int rows = Math.min(rowsPerTile, layout.height - top);
                     canvas.drawColor(Color.WHITE);
+                    long stageStart = SystemClock.elapsedRealtime();
                     for (int i = 0; i < 4; i++)
                         drawPhotoPart(canvas, sources[i], layout, i, selectedEdits[i], top, rows, paint);
+                    stats.photoMs += SystemClock.elapsedRealtime() - stageStart;
+                    stageStart = SystemClock.elapsedRealtime();
                     if (overlay != null) drawPart(canvas, overlay, top, rows, paint);
                     if (fittedFrame != null) {
                         frameTransform.setScale(layout.width * selectedFrameWidth / fittedFrame.getWidth(),
@@ -389,10 +405,13 @@ public class MainActivity extends Activity {
                                 -top);
                         canvas.drawBitmap(fittedFrame, frameTransform, framePaint);
                     }
+                    stats.frameMs += SystemClock.elapsedRealtime() - stageStart;
+                    stageStart = SystemClock.elapsedRealtime();
                     for (int row = 0; row < rows; row++) {
                         tile.getPixels(pixels, 0, layout.width, 0, row, layout.width, 1);
                         writer.writeRow(pixels);
                     }
+                    stats.pngMs += SystemClock.elapsedRealtime() - stageStart;
                     int progress = (int) (((long) (top + rows) * 10) / layout.height);
                     if (progress != lastProgress) {
                         lastProgress = progress;
@@ -401,7 +420,9 @@ public class MainActivity extends Activity {
                     }
                     top += rows;
                 }
+                long finishStart = SystemClock.elapsedRealtime();
                 writer.finish();
+                stats.pngMs += SystemClock.elapsedRealtime() - finishStart;
             } finally {
                 writer.abort();
             }
@@ -411,6 +432,7 @@ public class MainActivity extends Activity {
             if (overlay != null) overlay.close();
             if (fittedFrame != null) fittedFrame.recycle();
         }
+        return stats;
     }
 
     private void drawPart(Canvas canvas, Source source, int top, int rows, Paint paint) throws IOException {
@@ -632,6 +654,10 @@ public class MainActivity extends Activity {
             copy.panY = panY;
             return copy;
         }
+    }
+
+    private static final class RenderStats {
+        long setupMs, photoMs, frameMs, pngMs;
     }
 
     private final class EditorPreview extends View {
