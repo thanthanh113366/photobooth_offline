@@ -6,8 +6,9 @@ App Android thuần Java, không có quyền Internet, không dùng máy chủ h
 
 - Chọn đúng 4 ảnh từ bộ nhớ điện thoại bằng trình chọn tệp Android.
 - Chọn một khung PNG trong suốt (không bắt buộc).
-- Ghép 4 ảnh thành lưới 2 × 2, giữ nguyên kích thước pixel và tỉ lệ của từng ảnh; vùng dư có nền trắng.
-- Áp khung PNG lên trên ảnh ghép. Khung có cùng tỉ lệ ngang/dọc sẽ được đặt vừa ảnh ghép; **bốn ảnh gốc không bị thu nhỏ**. Khung có đúng kích thước pixel được đọc theo từng dải, còn khung nhỏ hơn sẽ được phóng lên và có thể mềm nét hơn.
+- Ghép 4 ảnh thành lưới 2 × 2. Chạm một ô trong bản xem trước để chỉnh riêng ảnh đó: kéo để dịch, chụm hai ngón hoặc dùng thanh trượt để zoom 25–400%, dùng thanh trượt để xoay -180° đến 180°.
+- Bản xem trước hiển thị khung chồng lên ảnh và phần ảnh bị cắt. App tự nới khổ ảnh ghép theo tỉ lệ khung để tránh lỗi tỉ lệ; thanh trượt tỉ lệ khung cho phép chỉnh thêm 70–130%.
+- Áp khung PNG lên trên ảnh ghép. Ở mức tỉ lệ khung 100%, khung giữ nguyên tỉ lệ của tệp PNG. Khung nhỏ hơn sẽ được phóng lên và có thể mềm nét hơn. Bốn ảnh đầu vào không bị giảm kích thước khi đọc; thao tác zoom/rotate do người dùng chọn có thể nội suy hoặc cắt ảnh khi xuất.
 - Lưu ảnh ghép PNG lossless vào vị trí người dùng chọn. Không giảm kích thước hoặc xuất JPEG.
 - Xoay ảnh theo EXIF trước khi ghép.
 
