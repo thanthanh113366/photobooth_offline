@@ -35,6 +35,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
+    private static final int PRINT_WIDTH_UNITS = 25; // 10 cm : 14.8 cm = 25 : 37.
+    private static final int PRINT_HEIGHT_UNITS = 37;
     private static final int PICK_PHOTOS = 1;
     private static final int PICK_FRAME = 2;
     private static final int SAVE_PNG = 3;
@@ -53,11 +55,10 @@ public class MainActivity extends Activity {
     private final Bitmap[] thumbs = new Bitmap[4];
     private Bitmap frameThumb;
     private final Size[] photoSizes = new Size[4];
-    private Size frameSize;
     private Layout previewLayout;
     private final PhotoEdit[] edits = {new PhotoEdit(), new PhotoEdit(), new PhotoEdit(), new PhotoEdit()};
     private int selectedPhoto;
-    private float frameRatioFactor = 1f;
+    private float frameWidthScale = 1f;
     private boolean settingControls;
     private volatile boolean busy;
 
@@ -72,7 +73,7 @@ public class MainActivity extends Activity {
         TextView title = label("PHOTOBOOTH", 30, Color.rgb(16, 55, 119));
         title.setTypeface(null, 1);
         body.addView(title);
-        body.addView(label("Ghép 4 ảnh tại máy • Xuất PNG nguyên độ phân giải", 15, Color.DKGRAY));
+        body.addView(label("Ghép 4 ảnh tại máy • PNG khổ in 10 × 14,8 cm", 15, Color.DKGRAY));
 
         Button choosePhotos = button("1. Chọn 4 ảnh");
         choosePhotos.setOnClickListener(v -> pickPhotos());
@@ -105,13 +106,13 @@ public class MainActivity extends Activity {
         body.addView(chooseFrame);
         frameLabel = label("Chưa chọn khung (có thể xuất không khung)", 14, Color.DKGRAY);
         body.addView(frameLabel);
-        frameRatioLabel = label("Tỉ lệ khung: tự khớp 100%", 14, Color.DKGRAY);
+        frameRatioLabel = label("Độ rộng khung: 100%", 14, Color.DKGRAY);
         body.addView(frameRatioLabel);
-        frameRatioBar = addSlider(body, "Nới/thu tỉ lệ khung (70–130%)", 70, 130, 100,
+        frameRatioBar = addSlider(body, "Nới/thu chiều ngang của khung (70–130%)", 70, 130, 100,
                 value -> {
-                    frameRatioFactor = value / 100f;
-                    frameRatioLabel.setText("Tỉ lệ khung: " + value + "% (100% giữ đúng tỉ lệ PNG)");
-                    recalculateLayout();
+                    frameWidthScale = value / 100f;
+                    frameRatioLabel.setText("Độ rộng khung: " + value + "%");
+                    preview.invalidate();
                 });
         frameRatioBar.setEnabled(false);
 
@@ -274,7 +275,7 @@ public class MainActivity extends Activity {
                     sizes[i] = orientedSize(selected.get(i));
                     newThumbs[i] = decode(selected.get(i), 512);
                 }
-                Size newFrameSize = selectedFrame == null ? null : rawSize(selectedFrame);
+                if (selectedFrame != null) rawSize(selectedFrame);
                 Bitmap newFrameThumb = selectedFrame == null ? null : decode(selectedFrame, 768);
                 runOnUiThread(() -> {
                     for (int i = 0; i < 4; i++) {
@@ -285,7 +286,6 @@ public class MainActivity extends Activity {
                     }
                     if (frameThumb != null) frameThumb.recycle();
                     frameThumb = newFrameThumb;
-                    frameSize = newFrameSize;
                     recalculateLayout();
                     status.setText("Sẵn sàng xuất ảnh PNG.");
                     busy = false;
@@ -304,9 +304,9 @@ public class MainActivity extends Activity {
     private void recalculateLayout() {
         for (Size size : photoSizes) if (size == null) return;
         try {
-            previewLayout = makeLayout(photoSizes, frameSize, frameRatioFactor);
-            dimensions.setText("Ảnh ghép: " + previewLayout.width + " × " + previewLayout.height
-                    + " px. Bản xem trước hiển thị cả khung và phần ảnh bị cắt.");
+            previewLayout = makeLayout(photoSizes);
+            dimensions.setText("Khổ in 10 × 14,8 cm • ảnh ghép " + previewLayout.width + " × "
+                    + previewLayout.height + " px. Bản xem trước hiển thị cả khung và phần ảnh bị cắt.");
             int availableWidth = getResources().getDisplayMetrics().widthPixels - dp(40);
             int desiredHeight = (int) ((long) availableWidth * previewLayout.height / previewLayout.width);
             preview.getLayoutParams().height = Math.max(dp(340), Math.min(dp(620), desiredHeight));
@@ -323,15 +323,16 @@ public class MainActivity extends Activity {
         status.setText("Đang ghép ảnh nguyên kích thước…");
         List<Uri> selected = new ArrayList<>(photos);
         Uri selectedFrame = frame;
-        float selectedRatio = frameRatioFactor;
+        float selectedFrameWidth = frameWidthScale;
         PhotoEdit[] selectedEdits = new PhotoEdit[4];
         for (int i = 0; i < 4; i++) selectedEdits[i] = edits[i].copy();
         worker.execute(() -> {
             try {
-                Layout layout = inspect(selected, selectedFrame, selectedRatio);
+                Layout layout = inspect(selected);
                 try (OutputStream stream = getContentResolver().openOutputStream(destination, "w")) {
                     if (stream == null) throw new IOException("Không mở được tệp PNG để ghi.");
-                    renderTiled(selected, selectedFrame, layout, selectedEdits, stream);
+                    renderTiled(selected, selectedFrame, layout, selectedEdits,
+                            selectedFrameWidth, stream);
                 }
                 runOnUiThread(() -> status.setText("Đã lưu PNG " + layout.width + " × " + layout.height + " px."));
             } catch (Exception | OutOfMemoryError e) {
@@ -343,7 +344,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderTiled(List<Uri> selected, Uri selectedFrame, Layout layout,
-                             PhotoEdit[] selectedEdits, OutputStream stream)
+                             PhotoEdit[] selectedEdits, float selectedFrameWidth, OutputStream stream)
             throws IOException {
         Source[] sources = new Source[4];
         Source overlay = null;
@@ -355,7 +356,8 @@ public class MainActivity extends Activity {
             }
             if (selectedFrame != null) {
                 Size frameSize = rawSize(selectedFrame);
-                if (frameSize.width == layout.width && frameSize.height == layout.height)
+                if (selectedFrameWidth == 1f
+                        && frameSize.width == layout.width && frameSize.height == layout.height)
                     overlay = new Source(selectedFrame, ExifInterface.ORIENTATION_NORMAL);
                 else
                     fittedFrame = decode(selectedFrame, 0);
@@ -370,7 +372,8 @@ public class MainActivity extends Activity {
             Paint framePaint = new Paint(Paint.FILTER_BITMAP_FLAG);
             Matrix frameTransform = new Matrix();
             int[] pixels = new int[layout.width];
-            LosslessPngWriter writer = new LosslessPngWriter(stream, layout.width, layout.height);
+            LosslessPngWriter writer = new LosslessPngWriter(stream, layout.width, layout.height,
+                    10.0, 14.8);
             try {
                 int lastProgress = -1;
                 for (int top = 0; top < layout.height; ) {
@@ -380,9 +383,10 @@ public class MainActivity extends Activity {
                         drawPhotoPart(canvas, sources[i], layout, i, selectedEdits[i], top, rows, paint);
                     if (overlay != null) drawPart(canvas, overlay, top, rows, paint);
                     if (fittedFrame != null) {
-                        frameTransform.setScale(layout.width / (float) fittedFrame.getWidth(),
+                        frameTransform.setScale(layout.width * selectedFrameWidth / fittedFrame.getWidth(),
                                 layout.height / (float) fittedFrame.getHeight());
-                        frameTransform.postTranslate(0, -top);
+                        frameTransform.postTranslate(layout.width * (1f - selectedFrameWidth) / 2f,
+                                -top);
                         canvas.drawBitmap(fittedFrame, frameTransform, framePaint);
                     }
                     for (int row = 0; row < rows; row++) {
@@ -527,34 +531,28 @@ public class MainActivity extends Activity {
         }
     }
 
-    private Layout inspect(List<Uri> selected, Uri selectedFrame, float ratioFactor) throws IOException {
+    private Layout inspect(List<Uri> selected) throws IOException {
         Size[] sizes = new Size[4];
         for (int i = 0; i < 4; i++) sizes[i] = orientedSize(selected.get(i));
-        Size selectedFrameSize = selectedFrame == null ? null : rawSize(selectedFrame);
-        return makeLayout(sizes, selectedFrameSize, ratioFactor);
+        return makeLayout(sizes);
     }
 
-    private Layout makeLayout(Size[] sizes, Size selectedFrameSize, float ratioFactor) throws IOException {
+    private Layout makeLayout(Size[] sizes) throws IOException {
         int left = Math.max(sizes[0].width, sizes[2].width);
         int right = Math.max(sizes[1].width, sizes[3].width);
         int top = Math.max(sizes[0].height, sizes[1].height);
         int bottom = Math.max(sizes[2].height, sizes[3].height);
         long width = (long) left + right, height = (long) top + bottom;
-        if (selectedFrameSize != null) {
-            double desiredRatio = selectedFrameSize.width / (double) selectedFrameSize.height * ratioFactor;
-            if (width / (double) height < desiredRatio)
-                width = (long) Math.ceil(height * desiredRatio);
-            else
-                height = (long) Math.ceil(width / desiredRatio);
-            if (width > Integer.MAX_VALUE || height > Integer.MAX_VALUE)
-                throw new IOException("Kích thước ảnh vượt giới hạn định dạng Android.");
-            left = (int) (width / 2);
-            right = (int) (width - left);
-            top = (int) (height / 2);
-            bottom = (int) (height - top);
-        }
+        if (width * PRINT_HEIGHT_UNITS < height * PRINT_WIDTH_UNITS)
+            width = (height * PRINT_WIDTH_UNITS + PRINT_HEIGHT_UNITS - 1) / PRINT_HEIGHT_UNITS;
+        else
+            height = (width * PRINT_HEIGHT_UNITS + PRINT_WIDTH_UNITS - 1) / PRINT_WIDTH_UNITS;
         if (width > Integer.MAX_VALUE || height > Integer.MAX_VALUE)
             throw new IOException("Kích thước ảnh vượt giới hạn định dạng Android.");
+        left = (int) (width / 2);
+        right = (int) (width - left);
+        top = (int) (height / 2);
+        bottom = (int) (height - top);
         return new Layout((int) width, (int) height, new int[]{left, right}, new int[]{top, bottom});
     }
 
@@ -684,9 +682,12 @@ public class MainActivity extends Activity {
                         new RectF(0, 0, photoSizes[i].width, photoSizes[i].height), imagePaint);
                 canvas.restore();
             }
-            if (frameThumb != null)
+            if (frameThumb != null) {
+                float frameLeft = layout.width * (1f - frameWidthScale) / 2f;
                 canvas.drawBitmap(frameThumb, null,
-                        new RectF(0, 0, layout.width, layout.height), imagePaint);
+                        new RectF(frameLeft, 0, frameLeft + layout.width * frameWidthScale,
+                                layout.height), imagePaint);
+            }
             Rect chosen = cellRect(layout, selectedPhoto);
             selectedPaint.setStrokeWidth(dp(3) / viewScale);
             canvas.drawRect(chosen, selectedPaint);

@@ -10,6 +10,7 @@ import java.util.zip.DeflaterOutputStream;
 final class LosslessPngWriter {
     private static final byte[] SIGNATURE = {(byte) 137, 80, 78, 71, 13, 10, 26, 10};
     private static final byte[] IHDR = {'I', 'H', 'D', 'R'};
+    private static final byte[] PHYS = {'p', 'H', 'Y', 's'};
     private static final byte[] IDAT = {'I', 'D', 'A', 'T'};
     private static final byte[] IEND = {'I', 'E', 'N', 'D'};
 
@@ -26,6 +27,11 @@ final class LosslessPngWriter {
     private boolean finished;
 
     LosslessPngWriter(OutputStream output, int width, int height) throws IOException {
+        this(output, width, height, 0, 0);
+    }
+
+    LosslessPngWriter(OutputStream output, int width, int height,
+                      double printWidthCm, double printHeightCm) throws IOException {
         if (width <= 0 || height <= 0 || width > (Integer.MAX_VALUE - 1) / 3)
             throw new IOException("Kích thước PNG không được Android hỗ trợ.");
         this.output = output;
@@ -43,6 +49,18 @@ final class LosslessPngWriter {
         header[8] = 8; // 8 bit per color channel.
         header[9] = 2; // RGB; the composition already has a white background.
         writeChunk(output, IHDR, header, header.length);
+        if (printWidthCm > 0 && printHeightCm > 0) {
+            long pixelsPerMeterX = Math.round(width * 100.0 / printWidthCm);
+            long pixelsPerMeterY = Math.round(height * 100.0 / printHeightCm);
+            if (pixelsPerMeterX <= 0 || pixelsPerMeterY <= 0
+                    || pixelsPerMeterX > 0xffffffffL || pixelsPerMeterY > 0xffffffffL)
+                throw new IOException("Không thể ghi khổ in vào PNG quá lớn.");
+            byte[] physicalSize = new byte[9];
+            putInt(physicalSize, 0, (int) pixelsPerMeterX);
+            putInt(physicalSize, 4, (int) pixelsPerMeterY);
+            physicalSize[8] = 1; // Pixels per meter.
+            writeChunk(output, PHYS, physicalSize, physicalSize.length);
+        }
         chunks = new IdatChunks(output);
         compressed = new DeflaterOutputStream(chunks, new Deflater(Deflater.DEFAULT_COMPRESSION), 65536);
     }

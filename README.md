@@ -7,9 +7,9 @@ App Android thuần Java, không có quyền Internet, không dùng máy chủ h
 - Chọn đúng 4 ảnh từ bộ nhớ điện thoại bằng trình chọn tệp Android.
 - Chọn một khung PNG trong suốt (không bắt buộc).
 - Ghép 4 ảnh thành lưới 2 × 2. Chạm một ô trong bản xem trước để chỉnh riêng ảnh đó: kéo để dịch, chụm hai ngón hoặc dùng thanh trượt để zoom 25–400%, dùng thanh trượt để xoay -180° đến 180°.
-- Bản xem trước hiển thị khung chồng lên ảnh và phần ảnh bị cắt. App tự nới khổ ảnh ghép theo tỉ lệ khung để tránh lỗi tỉ lệ; thanh trượt tỉ lệ khung cho phép chỉnh thêm 70–130%.
-- Áp khung PNG lên trên ảnh ghép. Ở mức tỉ lệ khung 100%, khung giữ nguyên tỉ lệ của tệp PNG. Khung nhỏ hơn sẽ được phóng lên và có thể mềm nét hơn. Bốn ảnh đầu vào không bị giảm kích thước khi đọc; thao tác zoom/rotate do người dùng chọn có thể nội suy hoặc cắt ảnh khi xuất.
-- Lưu ảnh ghép PNG lossless vào vị trí người dùng chọn. Không giảm kích thước hoặc xuất JPEG.
+- Bản xem trước hiển thị khung chồng lên ảnh và phần ảnh bị cắt. App nới canvas để ảnh xuất có tỉ lệ cố định **10 × 14,8 cm (25:37)**, bất kể tỉ lệ của ảnh hoặc khung đầu vào. Thanh trượt chỉnh độ rộng khung 70–130% trên canvas này.
+- Áp khung PNG lên trên ảnh ghép. Khung nhỏ hơn sẽ được phóng lên và có thể mềm nét hơn. Bốn ảnh đầu vào không bị giảm kích thước khi đọc; thao tác zoom/rotate do người dùng chọn có thể nội suy hoặc cắt ảnh khi xuất.
+- Lưu ảnh ghép PNG lossless vào vị trí người dùng chọn, kèm metadata `pHYs` cho khổ in 10 × 14,8 cm. Không giảm kích thước hoặc xuất JPEG. Khi in, chọn đúng khổ giấy và tắt tùy chọn tự cắt/phóng của ứng dụng in nếu có; một số ứng dụng in có thể bỏ qua metadata PNG.
 - Xoay ảnh theo EXIF trước khi ghép.
 
 PNG lossless không làm mất chất lượng thêm khi lưu ảnh ghép, nhưng kích thước tệp không nhất thiết bằng tổng kích thước các JPG gốc. Bốn ảnh 5 MB không thể được cam kết tạo ra đúng một ảnh 20 MB; ảnh JPEG đã được nén mất dữ liệu, còn ảnh ghép PNG giữ dữ liệu pixel và có thể lớn hơn nhiều lần. Bộ ghi PNG thử năm bộ lọc dự đoán chuẩn trên từng dòng rồi chọn kết quả dễ nén nhất, không thay đổi pixel khi giải mã. App giữ nguyên độ phân giải ảnh đầu vào, còn metadata và byte của từng tệp gốc không nằm trong PNG ghép. Nếu cần giữ nguyên byte của ảnh gốc, phải lưu thêm các tệp gốc riêng (ví dụ ZIP).

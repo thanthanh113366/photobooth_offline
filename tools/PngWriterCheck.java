@@ -3,6 +3,8 @@ package vn.hmtruong.photobooth;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import javax.imageio.ImageIO;
 
 /** Runs on the GitHub Actions JDK; verifies the PNG can be decoded pixel-for-pixel. */
@@ -46,6 +48,29 @@ public final class PngWriterCheck {
         }
         if (gradientBytes.size() >= 256 * 64 * 3 / 4)
             throw new AssertionError("PNG prediction did not reduce the smooth image");
+
+        ByteArrayOutputStream printBytes = new ByteArrayOutputStream();
+        LosslessPngWriter printWriter = new LosslessPngWriter(printBytes, 25, 37, 10.0, 14.8);
+        int[] white = new int[25];
+        java.util.Arrays.fill(white, 0xffffffff);
+        for (int y = 0; y < 37; y++) printWriter.writeRow(white);
+        printWriter.finish();
+        byte[] printPng = printBytes.toByteArray();
+        boolean foundPhysicalSize = false;
+        int offset = 8;
+        while (offset + 12 <= printPng.length) {
+            int length = ByteBuffer.wrap(printPng, offset, 4).getInt();
+            String type = new String(printPng, offset + 4, 4, StandardCharsets.US_ASCII);
+            if ("pHYs".equals(type)) {
+                if (length != 9 || ByteBuffer.wrap(printPng, offset + 8, 4).getInt() != 250
+                        || ByteBuffer.wrap(printPng, offset + 12, 4).getInt() != 250
+                        || printPng[offset + 16] != 1)
+                    throw new AssertionError("Incorrect physical print dimensions");
+                foundPhysicalSize = true;
+            }
+            offset += length + 12;
+        }
+        if (!foundPhysicalSize) throw new AssertionError("PNG print size metadata is missing");
         System.out.println("Lossless PNG scanline check passed");
     }
 }
