@@ -22,9 +22,12 @@ import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 
 import java.io.InputStream;
@@ -58,15 +61,18 @@ public class MainActivity extends Activity {
     private Button saveButton;
     private Button printButton;
     private Button detailButton;
+    private Button choosePhotosButton;
+    private Spinner countSelector;
     private EditorPreview preview;
     private TextView editLabel;
     private TextView frameRatioLabel;
     private SeekBar zoomBar, rotationBar, panXBar, panYBar, frameRatioBar;
-    private final Bitmap[] thumbs = new Bitmap[4];
+    private final Bitmap[] thumbs = new Bitmap[8];
     private Bitmap frameThumb;
-    private final Size[] photoSizes = new Size[4];
+    private final Size[] photoSizes = new Size[8];
     private Layout previewLayout;
-    private final PhotoEdit[] edits = {new PhotoEdit(), new PhotoEdit(), new PhotoEdit(), new PhotoEdit()};
+    private final PhotoEdit[] edits = new PhotoEdit[8];
+    private int photoCount = 4;
     private int selectedPhoto;
     private float frameWidthScale = 1f;
     private boolean settingControls;
@@ -74,6 +80,7 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        for (int i = 0; i < edits.length; i++) edits[i] = new PhotoEdit();
         int pad = dp(20);
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
@@ -83,11 +90,17 @@ public class MainActivity extends Activity {
         TextView title = label("PHOTOBOOTH", 30, Color.rgb(16, 55, 119));
         title.setTypeface(null, 1);
         body.addView(title);
-        body.addView(label("Ghép 4 ảnh tại máy • PNG khổ in 10 × 14,8 cm", 15, Color.DKGRAY));
+        body.addView(label("Ghép 1, 2, 4 hoặc 8 ảnh tại máy • khổ in 10 × 14,8 cm", 15, Color.DKGRAY));
+        body.addView(label("Số ảnh trong thiệp", 15, Color.DKGRAY));
+        countSelector = new Spinner(this);
+        countSelector.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"1 ảnh", "2 ảnh xếp dọc", "4 ảnh (2 × 2)", "8 ảnh (2 × 4)"}));
+        body.addView(countSelector);
 
-        Button choosePhotos = button("1. Chọn 4 ảnh");
-        choosePhotos.setOnClickListener(v -> pickPhotos());
-        body.addView(choosePhotos);
+        choosePhotosButton = button("1. Chọn 4 ảnh");
+        choosePhotosButton.setOnClickListener(v -> pickPhotos());
+        body.addView(choosePhotosButton);
 
         preview = new EditorPreview();
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, dp(470));
@@ -114,6 +127,9 @@ public class MainActivity extends Activity {
         Button chooseFrame = button("2. Chọn khung PNG trong suốt");
         chooseFrame.setOnClickListener(v -> pickFrame());
         body.addView(chooseFrame);
+        Button builtInFrame = button("Dùng khung Graduation · UIT có sẵn");
+        builtInFrame.setOnClickListener(v -> useBuiltInFrame());
+        body.addView(builtInFrame);
         frameLabel = label("Chưa chọn khung (có thể xuất không khung)", 14, Color.DKGRAY);
         body.addView(frameLabel);
         frameRatioLabel = label("Độ rộng khung: 100%", 14, Color.DKGRAY);
@@ -122,7 +138,8 @@ public class MainActivity extends Activity {
                 value -> {
                     frameWidthScale = value / 100f;
                     frameRatioLabel.setText("Độ rộng khung: " + value + "%");
-                    preview.invalidate();
+                    if (previewLayout != null) recalculateLayout();
+                    else preview.invalidate();
                 });
         frameRatioBar.setEnabled(false);
 
@@ -141,6 +158,59 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.addView(body);
         setContentView(scroll);
+        countSelector.setSelection(2);
+        countSelector.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                setPhotoCount(new int[]{1, 2, 4, 8}[position]);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        setPhotoCount(4);
+    }
+
+    private void setPhotoCount(int count) {
+        if (busy) return;
+        photoCount = count;
+        photos.clear();
+        previewLayout = null;
+        selectedPhoto = 0;
+        for (int i = 0; i < thumbs.length; i++) {
+            if (thumbs[i] != null) thumbs[i].recycle();
+            thumbs[i] = null;
+            photoSizes[i] = null;
+            edits[i] = new PhotoEdit();
+        }
+        if (frameThumb != null) frameThumb.recycle();
+        frameThumb = null;
+        frameWidthScale = 1f;
+        frameRatioBar.setProgress(30);
+        frame = builtInFrameUri(count);
+        frameLabel.setText("Khung có sẵn: Graduation · UIT · HaMinhTruong (" + count + " ảnh)");
+        frameRatioBar.setEnabled(true);
+        frameRatioLabel.setText("Độ rộng khung: 100%");
+        choosePhotosButton.setText("1. Chọn " + count + " ảnh");
+        dimensions.setText("Chọn " + count + " ảnh để xem kích thước ảnh ghép.");
+        status.setText("Đã chọn chế độ " + count + " ảnh và khung có sẵn.");
+        showSelectedPhoto();
+        preview.invalidate();
+    }
+
+    private Uri builtInFrameUri(int count) {
+        int id = count == 1 ? R.drawable.graduation_frame_1
+                : count == 2 ? R.drawable.graduation_frame_2
+                : count == 8 ? R.drawable.graduation_frame_8
+                : R.drawable.graduation_frame_4;
+        return Uri.parse("android.resource://" + getPackageName() + "/" + id);
+    }
+
+    private void useBuiltInFrame() {
+        if (busy) return;
+        frame = builtInFrameUri(photoCount);
+        frameLabel.setText("Khung có sẵn: Graduation · UIT · HaMinhTruong (" + photoCount + " ảnh)");
+        frameWidthScale = 1f;
+        frameRatioBar.setProgress(30);
+        frameRatioLabel.setText("Độ rộng khung: 100%");
+        if (photos.size() == photoCount) refreshPreview();
     }
 
     private TextView label(String value, int size, int color) {
@@ -224,8 +294,8 @@ public class MainActivity extends Activity {
 
     private void save(int mode) {
         if (busy) return;
-        if (photos.size() != 4) {
-            status.setText("Vui lòng chọn đúng 4 ảnh.");
+        if (photos.size() != photoCount) {
+            status.setText("Vui lòng chọn đúng " + photoCount + " ảnh.");
             return;
         }
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -248,14 +318,15 @@ public class MainActivity extends Activity {
             } else if (data.getData() != null) {
                 selected.add(data.getData());
             }
-            if (selected.size() != 4) {
-                status.setText("Bạn đã chọn " + selected.size() + " ảnh. Hãy chọn đúng 4 ảnh cùng lúc.");
+            if (selected.size() != photoCount) {
+                status.setText("Bạn đã chọn " + selected.size() + " ảnh. Hãy chọn đúng "
+                        + photoCount + " ảnh cùng lúc.");
                 return;
             }
             photos.clear();
             photos.addAll(selected);
             for (Uri uri : selected) persistRead(uri);
-            for (int i = 0; i < 4; i++) edits[i] = new PhotoEdit();
+            for (int i = 0; i < photoCount; i++) edits[i] = new PhotoEdit();
             selectedPhoto = 0;
             showSelectedPhoto();
             refreshPreview();
@@ -265,7 +336,7 @@ public class MainActivity extends Activity {
             frameLabel.setText("Khung: " + fileName(frame));
             frameRatioBar.setEnabled(true);
             status.setText("Đã chọn khung. Đang cập nhật bản xem trước…");
-            if (photos.size() == 4) refreshPreview();
+            if (photos.size() == photoCount) refreshPreview();
         } else if ((requestCode == SAVE_PNG || requestCode == SAVE_PRINT_PNG
                 || requestCode == SAVE_DETAIL_PNG)
                 && data.getData() != null) {
@@ -290,24 +361,25 @@ public class MainActivity extends Activity {
         saveButton.setEnabled(false);
         printButton.setEnabled(false);
         detailButton.setEnabled(false);
+        countSelector.setEnabled(false);
         status.setText("Đang đọc thông tin ảnh…");
         List<Uri> selected = new ArrayList<>(photos);
         Uri selectedFrame = frame;
         worker.execute(() -> {
             try {
-                Size[] sizes = new Size[4];
-                Bitmap[] newThumbs = new Bitmap[4];
-                for (int i = 0; i < 4; i++) {
+                Size[] sizes = new Size[selected.size()];
+                Bitmap[] newThumbs = new Bitmap[selected.size()];
+                for (int i = 0; i < selected.size(); i++) {
                     sizes[i] = orientedSize(selected.get(i));
                     newThumbs[i] = decode(selected.get(i), 512);
                 }
                 if (selectedFrame != null) rawSize(selectedFrame);
                 Bitmap newFrameThumb = selectedFrame == null ? null : decode(selectedFrame, 768);
                 runOnUiThread(() -> {
-                    for (int i = 0; i < 4; i++) {
+                    for (int i = 0; i < thumbs.length; i++) {
                         Bitmap old = thumbs[i];
-                        thumbs[i] = newThumbs[i];
-                        photoSizes[i] = sizes[i];
+                        thumbs[i] = i < newThumbs.length ? newThumbs[i] : null;
+                        photoSizes[i] = i < sizes.length ? sizes[i] : null;
                         if (old != null) old.recycle();
                     }
                     if (frameThumb != null) frameThumb.recycle();
@@ -318,6 +390,7 @@ public class MainActivity extends Activity {
                     saveButton.setEnabled(true);
                     printButton.setEnabled(true);
                     detailButton.setEnabled(true);
+                    countSelector.setEnabled(true);
                 });
             } catch (Exception | OutOfMemoryError e) {
                 runOnUiThread(() -> {
@@ -326,15 +399,18 @@ public class MainActivity extends Activity {
                     saveButton.setEnabled(true);
                     printButton.setEnabled(true);
                     detailButton.setEnabled(true);
+                    countSelector.setEnabled(true);
                 });
             }
         });
     }
 
     private void recalculateLayout() {
-        for (Size size : photoSizes) if (size == null) return;
+        for (int i = 0; i < photoCount; i++) if (photoSizes[i] == null) return;
         try {
-            previewLayout = makeLayout(photoSizes);
+            Size[] selectedSizes = new Size[photoCount];
+            System.arraycopy(photoSizes, 0, selectedSizes, 0, photoCount);
+            previewLayout = layoutWithFrame(makeLayout(selectedSizes), frame, frameWidthScale);
             dimensions.setText("Khổ in 10 × 14,8 cm • ảnh ghép " + previewLayout.width + " × "
                     + previewLayout.height + " px. Bản xem trước hiển thị cả khung và phần ảnh bị cắt.");
             int availableWidth = getResources().getDisplayMetrics().widthPixels - dp(40);
@@ -352,28 +428,25 @@ public class MainActivity extends Activity {
         saveButton.setEnabled(false);
         printButton.setEnabled(false);
         detailButton.setEnabled(false);
+        countSelector.setEnabled(false);
         boolean reducedSize = mode != SAVE_PNG;
         status.setText(reducedSize ? "Đang ghép PNG cỡ in…" : "Đang ghép ảnh nguyên kích thước…");
         List<Uri> selected = new ArrayList<>(photos);
         Uri selectedFrame = frame;
         float selectedFrameWidth = frameWidthScale;
-        PhotoEdit[] selectedEdits = new PhotoEdit[4];
-        for (int i = 0; i < 4; i++) selectedEdits[i] = edits[i].copy();
+        PhotoEdit[] selectedEdits = new PhotoEdit[selected.size()];
+        for (int i = 0; i < selected.size(); i++) selectedEdits[i] = edits[i].copy();
         worker.execute(() -> {
             long started = SystemClock.elapsedRealtime();
             try {
-                Layout layout = inspect(selected);
+                Layout layout = layoutWithFrame(inspect(selected), selectedFrame, selectedFrameWidth);
                 int outputWidth = mode == SAVE_DETAIL_PNG ? DETAIL_WIDTH_PX : PRINT_WIDTH_PX;
                 int outputHeight = mode == SAVE_DETAIL_PNG ? DETAIL_HEIGHT_PX : PRINT_HEIGHT_PX;
                 Layout outputLayout = reducedSize
-                        ? new Layout(outputWidth, outputHeight,
-                                new int[]{outputWidth / 2, outputWidth / 2},
-                                new int[]{outputHeight / 2, outputHeight / 2})
-                        : layout;
-                if (reducedSize) {
-                    float scale = outputLayout.width / (float) layout.width;
-                    for (PhotoEdit edit : selectedEdits) edit.zoom *= scale;
-                }
+                        ? evenLayout(outputWidth, outputHeight, layout.colWidths.length,
+                                layout.rowHeights.length) : layout;
+                if (reducedSize)
+                    outputLayout = layoutWithFrame(outputLayout, selectedFrame, selectedFrameWidth);
                 RenderStats stats;
                 try (OutputStream stream = getContentResolver().openOutputStream(destination, "w")) {
                     if (stream == null) throw new IOException("Không mở được tệp PNG để ghi.");
@@ -395,6 +468,7 @@ public class MainActivity extends Activity {
                     saveButton.setEnabled(true);
                     printButton.setEnabled(true);
                     detailButton.setEnabled(true);
+                    countSelector.setEnabled(true);
                 });
             }
         });
@@ -406,12 +480,12 @@ public class MainActivity extends Activity {
             throws IOException {
         RenderStats stats = new RenderStats();
         long setupStart = SystemClock.elapsedRealtime();
-        Source[] sources = new Source[4];
+        Source[] sources = new Source[selected.size()];
         Source overlay = null;
         Bitmap fittedFrame = null;
         Bitmap tile = null;
         try {
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < selected.size(); i++) {
                 sources[i] = new Source(selected.get(i), orientation(selected.get(i)));
             }
             if (selectedFrame != null) {
@@ -441,7 +515,7 @@ public class MainActivity extends Activity {
                     int rows = Math.min(rowsPerTile, layout.height - top);
                     canvas.drawColor(Color.WHITE);
                     long stageStart = SystemClock.elapsedRealtime();
-                    for (int i = 0; i < 4; i++)
+                    for (int i = 0; i < selected.size(); i++)
                         drawPhotoPart(canvas, sources[i], layout, i, selectedEdits[i], top, rows, paint);
                     stats.photoMs += SystemClock.elapsedRealtime() - stageStart;
                     stageStart = SystemClock.elapsedRealtime();
@@ -563,17 +637,44 @@ public class MainActivity extends Activity {
     }
 
     private Rect cellRect(Layout layout, int index) {
-        int col = index % 2, row = index / 2;
-        int left = col == 0 ? 0 : layout.colWidths[0];
-        int top = row == 0 ? 0 : layout.rowHeights[0];
+        if (layout.windows != null) return layout.windows[index];
+        int cols = layout.colWidths.length;
+        int col = index % cols, row = index / cols;
+        int left = 0, top = 0;
+        for (int i = 0; i < col; i++) left += layout.colWidths[i];
+        for (int i = 0; i < row; i++) top += layout.rowHeights[i];
         return new Rect(left, top, left + layout.colWidths[col], top + layout.rowHeights[row]);
+    }
+
+    private int cellAt(Layout layout, float x, float y) {
+        if (layout.windows != null) {
+            int nearest = 0;
+            float nearestDistance = Float.MAX_VALUE;
+            for (int i = 0; i < layout.windows.length; i++) {
+                Rect cell = layout.windows[i];
+                if (cell.contains((int) x, (int) y)) return i;
+                float dx = x - cell.exactCenterX(), dy = y - cell.exactCenterY();
+                float distance = dx * dx + dy * dy;
+                if (distance < nearestDistance) { nearestDistance = distance; nearest = i; }
+            }
+            return nearest;
+        }
+        int col = 0, row = 0;
+        int edge = layout.colWidths[0];
+        while (col + 1 < layout.colWidths.length && x >= edge)
+            edge += layout.colWidths[++col];
+        edge = layout.rowHeights[0];
+        while (row + 1 < layout.rowHeights.length && y >= edge)
+            edge += layout.rowHeights[++row];
+        return row * layout.colWidths.length + col;
     }
 
     private Matrix photoMatrix(Layout layout, int index, int width, int height, PhotoEdit edit) {
         Rect cell = cellRect(layout, index);
+        float fit = Math.max(cell.width() / (float) width, cell.height() / (float) height);
         Matrix matrix = new Matrix();
         matrix.setTranslate(-width / 2f, -height / 2f);
-        matrix.postScale(edit.zoom, edit.zoom);
+        matrix.postScale(fit * edit.zoom, fit * edit.zoom);
         matrix.postRotate(edit.rotation);
         matrix.postTranslate(cell.exactCenterX() + edit.panX * cell.width() / 2f,
                 cell.exactCenterY() + edit.panY * cell.height() / 2f);
@@ -602,28 +703,66 @@ public class MainActivity extends Activity {
     }
 
     private Layout inspect(List<Uri> selected) throws IOException {
-        Size[] sizes = new Size[4];
-        for (int i = 0; i < 4; i++) sizes[i] = orientedSize(selected.get(i));
+        Size[] sizes = new Size[selected.size()];
+        for (int i = 0; i < selected.size(); i++) sizes[i] = orientedSize(selected.get(i));
         return makeLayout(sizes);
     }
 
     private Layout makeLayout(Size[] sizes) throws IOException {
-        int left = Math.max(sizes[0].width, sizes[2].width);
-        int right = Math.max(sizes[1].width, sizes[3].width);
-        int top = Math.max(sizes[0].height, sizes[1].height);
-        int bottom = Math.max(sizes[2].height, sizes[3].height);
-        long width = (long) left + right, height = (long) top + bottom;
+        int cols = sizes.length <= 2 ? 1 : 2;
+        int rows = sizes.length / cols;
+        int[] colWidths = new int[cols];
+        int[] rowHeights = new int[rows];
+        for (int i = 0; i < sizes.length; i++) {
+            colWidths[i % cols] = Math.max(colWidths[i % cols], sizes[i].width);
+            rowHeights[i / cols] = Math.max(rowHeights[i / cols], sizes[i].height);
+        }
+        long width = 0, height = 0;
+        for (int value : colWidths) width += value;
+        for (int value : rowHeights) height += value;
         if (width * PRINT_HEIGHT_UNITS < height * PRINT_WIDTH_UNITS)
             width = (height * PRINT_WIDTH_UNITS + PRINT_HEIGHT_UNITS - 1) / PRINT_HEIGHT_UNITS;
         else
             height = (width * PRINT_HEIGHT_UNITS + PRINT_WIDTH_UNITS - 1) / PRINT_WIDTH_UNITS;
         if (width > Integer.MAX_VALUE || height > Integer.MAX_VALUE)
             throw new IOException("Kích thước ảnh vượt giới hạn định dạng Android.");
-        left = (int) (width / 2);
-        right = (int) (width - left);
-        top = (int) (height / 2);
-        bottom = (int) (height - top);
-        return new Layout((int) width, (int) height, new int[]{left, right}, new int[]{top, bottom});
+        return evenLayout((int) width, (int) height, cols, rows);
+    }
+
+    private Layout evenLayout(int width, int height, int cols, int rows) {
+        int[] colWidths = new int[cols];
+        int[] rowHeights = new int[rows];
+        for (int col = 0; col < cols; col++)
+            colWidths[col] = width / cols + (col < width % cols ? 1 : 0);
+        for (int row = 0; row < rows; row++)
+            rowHeights[row] = height / rows + (row < height % rows ? 1 : 0);
+        return new Layout(width, height, colWidths, rowHeights);
+    }
+
+    private Layout layoutWithFrame(Layout layout, Uri selectedFrame, float frameScale) {
+        if (selectedFrame == null || !selectedFrame.equals(builtInFrameUri(
+                layout.colWidths.length * layout.rowHeights.length))) return layout;
+        int count = layout.colWidths.length * layout.rowHeights.length;
+        int cols = layout.colWidths.length, rows = layout.rowHeights.length;
+        float windowWidth = (2400f - 340f - (cols - 1) * 58f) / cols;
+        float windowHeight = (3070f - 560f - (rows - 1) * 62f) / rows;
+        Rect[] windows = new Rect[count];
+        for (int i = 0; i < count; i++) {
+            int col = i % cols, row = i / cols;
+            float originalLeft = 170f + col * (windowWidth + 58f);
+            float originalTop = 560f + row * (windowHeight + 62f);
+            float scaledLeft = layout.width * ((1f - frameScale) / 2f
+                    + frameScale * originalLeft / 2400f);
+            float scaledRight = layout.width * ((1f - frameScale) / 2f
+                    + frameScale * (originalLeft + windowWidth) / 2400f);
+            int left = Math.max(0, Math.round(scaledLeft));
+            int right = Math.min(layout.width, Math.round(scaledRight));
+            int top = Math.max(0, Math.round(layout.height * originalTop / 3552f));
+            int bottom = Math.min(layout.height,
+                    Math.round(layout.height * (originalTop + windowHeight) / 3552f));
+            windows[i] = new Rect(left, top, right, bottom);
+        }
+        return new Layout(layout.width, layout.height, layout.colWidths, layout.rowHeights, windows);
     }
 
     private Size rawSize(Uri uri) throws IOException {
@@ -745,7 +884,7 @@ public class MainActivity extends Activity {
             canvas.scale(viewScale, viewScale);
             canvas.drawColor(Color.rgb(226, 234, 248));
             canvas.drawRect(0, 0, layout.width, layout.height, whitePaint());
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < photoCount; i++) {
                 if (thumbs[i] == null || photoSizes[i] == null) continue;
                 Rect cell = cellRect(layout, i);
                 canvas.save();
@@ -783,8 +922,7 @@ public class MainActivity extends Activity {
                 float y = (event.getY() - offsetY) / viewScale;
                 if (x < 0 || y < 0 || x >= previewLayout.width || y >= previewLayout.height)
                     return false;
-                selectedPhoto = (x >= previewLayout.colWidths[0] ? 1 : 0)
-                        + (y >= previewLayout.rowHeights[0] ? 2 : 0);
+                selectedPhoto = cellAt(previewLayout, x, y);
                 lastX = event.getX();
                 lastY = event.getY();
                 getParent().requestDisallowInterceptTouchEvent(true);
@@ -861,9 +999,14 @@ public class MainActivity extends Activity {
     private static class Layout {
         final int width, height;
         final int[] colWidths, rowHeights;
+        final Rect[] windows;
         Layout(int width, int height, int[] colWidths, int[] rowHeights) {
+            this(width, height, colWidths, rowHeights, null);
+        }
+        Layout(int width, int height, int[] colWidths, int[] rowHeights, Rect[] windows) {
             this.width = width; this.height = height;
             this.colWidths = colWidths; this.rowHeights = rowHeights;
+            this.windows = windows;
         }
     }
 }
