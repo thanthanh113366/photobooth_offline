@@ -5,10 +5,12 @@ import android.content.ClipData;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BitmapRegionDecoder;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Bundle;
@@ -33,7 +35,6 @@ public class MainActivity extends Activity {
     private static final int PICK_PHOTOS = 1;
     private static final int PICK_FRAME = 2;
     private static final int SAVE_PNG = 3;
-    private static final long MAX_PIXELS = 60_000_000L;
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final List<Uri> photos = new ArrayList<>();
@@ -228,47 +229,129 @@ public class MainActivity extends Activity {
         List<Uri> selected = new ArrayList<>(photos);
         Uri selectedFrame = frame;
         worker.execute(() -> {
-            Bitmap output = null;
             try {
                 Layout layout = inspect(selected);
-                if ((long) layout.width * layout.height > MAX_PIXELS)
-                    throw new IOException("Ảnh ghép vượt 60 triệu pixel; cần thiết bị có bộ nhớ lớn hơn.");
                 if (selectedFrame != null) {
                     Size frameSize = rawSize(selectedFrame);
                     if (frameSize.width != layout.width || frameSize.height != layout.height)
                         throw new IOException("Khung là " + frameSize.width + " × " + frameSize.height
                                 + " px; cần " + layout.width + " × " + layout.height + " px.");
                 }
-                output = Bitmap.createBitmap(layout.width, layout.height, Bitmap.Config.ARGB_8888);
-                Canvas canvas = new Canvas(output);
-                canvas.drawColor(Color.WHITE);
-                Paint paint = new Paint();
-                paint.setFilterBitmap(false); // Không nội suy hoặc thu nhỏ ảnh nguồn.
-                for (int i = 0; i < 4; i++) {
-                    Bitmap source = decode(selected.get(i), 0);
-                    int col = i % 2, row = i / 2;
-                    int x = (col == 0 ? 0 : layout.colWidths[0]) + (layout.colWidths[col] - source.getWidth()) / 2;
-                    int y = (row == 0 ? 0 : layout.rowHeights[0]) + (layout.rowHeights[row] - source.getHeight()) / 2;
-                    canvas.drawBitmap(source, x, y, paint);
-                    source.recycle();
-                }
-                if (selectedFrame != null) {
-                    Bitmap overlay = decode(selectedFrame, 0);
-                    canvas.drawBitmap(overlay, 0, 0, paint);
-                    overlay.recycle();
-                }
                 try (OutputStream stream = getContentResolver().openOutputStream(destination, "w")) {
-                    if (stream == null || !output.compress(Bitmap.CompressFormat.PNG, 100, stream))
-                        throw new IOException("Không ghi được tệp PNG.");
+                    if (stream == null) throw new IOException("Không mở được tệp PNG để ghi.");
+                    renderTiled(selected, selectedFrame, layout, stream);
                 }
                 runOnUiThread(() -> status.setText("Đã lưu PNG " + layout.width + " × " + layout.height + " px."));
             } catch (Exception | OutOfMemoryError e) {
                 runOnUiThread(() -> status.setText("Xuất ảnh thất bại: " + e.getMessage()));
             } finally {
-                if (output != null) output.recycle();
                 runOnUiThread(() -> { busy = false; saveButton.setEnabled(true); });
             }
         });
+    }
+
+    private void renderTiled(List<Uri> selected, Uri selectedFrame, Layout layout, OutputStream stream)
+            throws IOException {
+        Source[] sources = new Source[4];
+        Source overlay = null;
+        Bitmap tile = null;
+        try {
+            for (int i = 0; i < 4; i++) {
+                sources[i] = new Source(selected.get(i), orientation(selected.get(i)));
+                int col = i % 2, row = i / 2;
+                sources[i].x = (col == 0 ? 0 : layout.colWidths[0])
+                        + (layout.colWidths[col] - sources[i].width) / 2;
+                sources[i].y = (row == 0 ? 0 : layout.rowHeights[0])
+                        + (layout.rowHeights[row] - sources[i].height) / 2;
+            }
+            if (selectedFrame != null) overlay = new Source(selectedFrame, ExifInterface.ORIENTATION_NORMAL);
+
+            // The tile and one PNG row are the only buffers that grow with output width.
+            int rowsPerTile = Math.max(1, Math.min(128, 2_000_000 / layout.width));
+            tile = Bitmap.createBitmap(layout.width, rowsPerTile, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(tile);
+            Paint paint = new Paint();
+            paint.setFilterBitmap(false);
+            int[] pixels = new int[layout.width];
+            LosslessPngWriter writer = new LosslessPngWriter(stream, layout.width, layout.height);
+            try {
+                int lastProgress = -1;
+                for (int top = 0; top < layout.height; ) {
+                    int rows = Math.min(rowsPerTile, layout.height - top);
+                    canvas.drawColor(Color.WHITE);
+                    for (Source source : sources) drawPart(canvas, source, top, rows, paint);
+                    if (overlay != null) drawPart(canvas, overlay, top, rows, paint);
+                    for (int row = 0; row < rows; row++) {
+                        tile.getPixels(pixels, 0, layout.width, 0, row, layout.width, 1);
+                        writer.writeRow(pixels);
+                    }
+                    int progress = (int) (((long) (top + rows) * 10) / layout.height);
+                    if (progress != lastProgress) {
+                        lastProgress = progress;
+                        int percent = progress * 10;
+                        runOnUiThread(() -> status.setText("Đang lưu PNG nguyên kích thước: " + percent + "%"));
+                    }
+                    top += rows;
+                }
+                writer.finish();
+            } finally {
+                writer.abort();
+            }
+        } finally {
+            if (tile != null) tile.recycle();
+            for (Source source : sources) if (source != null) source.close();
+            if (overlay != null) overlay.close();
+        }
+    }
+
+    private void drawPart(Canvas canvas, Source source, int top, int rows, Paint paint) throws IOException {
+        int left = Math.max(0, source.x);
+        int right = Math.min(canvas.getWidth(), source.x + source.width);
+        int upper = Math.max(top, source.y);
+        int lower = Math.min(top + rows, source.y + source.height);
+        if (left >= right || upper >= lower) return;
+        Rect oriented = new Rect(left - source.x, upper - source.y,
+                right - source.x, lower - source.y);
+        Rect raw = rawRegion(oriented, source.rawWidth, source.rawHeight, source.orientation);
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        options.inSampleSize = 1;
+        options.inScaled = false;
+        Bitmap part = source.decoder.decodeRegion(raw, options);
+        if (part == null) throw new IOException("Không đọc được một phần của ảnh nguồn.");
+        Bitmap rotated = part;
+        try {
+            Matrix matrix = orientationMatrix(source.orientation);
+            if (!matrix.isIdentity())
+                rotated = Bitmap.createBitmap(part, 0, 0, part.getWidth(), part.getHeight(), matrix, false);
+            if (rotated.getWidth() != oriented.width() || rotated.getHeight() != oriented.height())
+                throw new IOException("Không thể xoay ảnh nguồn ở độ phân giải gốc.");
+            canvas.drawBitmap(rotated, left, upper - top, paint);
+        } finally {
+            if (rotated != part) rotated.recycle();
+            part.recycle();
+        }
+    }
+
+    private Rect rawRegion(Rect r, int width, int height, int orientation) {
+        switch (orientation) {
+            case ExifInterface.ORIENTATION_FLIP_HORIZONTAL:
+                return new Rect(width - r.right, r.top, width - r.left, r.bottom);
+            case ExifInterface.ORIENTATION_ROTATE_180:
+                return new Rect(width - r.right, height - r.bottom, width - r.left, height - r.top);
+            case ExifInterface.ORIENTATION_FLIP_VERTICAL:
+                return new Rect(r.left, height - r.bottom, r.right, height - r.top);
+            case ExifInterface.ORIENTATION_TRANSPOSE:
+                return new Rect(r.top, r.left, r.bottom, r.right);
+            case ExifInterface.ORIENTATION_ROTATE_90:
+                return new Rect(r.top, height - r.right, r.bottom, height - r.left);
+            case ExifInterface.ORIENTATION_TRANSVERSE:
+                return new Rect(width - r.bottom, height - r.right, width - r.top, height - r.left);
+            case ExifInterface.ORIENTATION_ROTATE_270:
+                return new Rect(width - r.bottom, r.left, width - r.top, r.right);
+            default:
+                return r;
+        }
     }
 
     private Layout inspect(List<Uri> selected) throws IOException {
@@ -279,8 +362,8 @@ public class MainActivity extends Activity {
         int top = Math.max(sizes[0].height, sizes[1].height);
         int bottom = Math.max(sizes[2].height, sizes[3].height);
         long width = (long) left + right, height = (long) top + bottom;
-        if (width > Integer.MAX_VALUE || height > Integer.MAX_VALUE || width * height > MAX_PIXELS)
-            throw new IOException("Ảnh ghép vượt 60 triệu pixel; app không giảm độ phân giải tự động.");
+        if (width > Integer.MAX_VALUE || height > Integer.MAX_VALUE)
+            throw new IOException("Kích thước ảnh vượt giới hạn định dạng Android.");
         return new Layout((int) width, (int) height, new int[]{left, right}, new int[]{top, bottom});
     }
 
@@ -345,6 +428,35 @@ public class MainActivity extends Activity {
             case ExifInterface.ORIENTATION_ROTATE_270: m.setRotate(270); break;
         }
         return m;
+    }
+
+    private final class Source {
+        final InputStream stream;
+        final BitmapRegionDecoder decoder;
+        final int rawWidth, rawHeight, width, height, orientation;
+        int x, y;
+
+        Source(Uri uri, int orientation) throws IOException {
+            InputStream opened = getContentResolver().openInputStream(uri);
+            if (opened == null) throw new IOException("Không mở được ảnh nguồn.");
+            BitmapRegionDecoder created;
+            try { created = BitmapRegionDecoder.newInstance(opened, false); }
+            catch (Exception e) { opened.close(); throw new IOException("Ảnh không hỗ trợ đọc theo từng dải.", e); }
+            if (created == null) { opened.close(); throw new IOException("Không đọc được ảnh nguồn."); }
+            stream = opened;
+            decoder = created;
+            rawWidth = decoder.getWidth();
+            rawHeight = decoder.getHeight();
+            this.orientation = orientation;
+            boolean swapped = orientation >= 5 && orientation <= 8;
+            width = swapped ? rawHeight : rawWidth;
+            height = swapped ? rawWidth : rawHeight;
+        }
+
+        void close() {
+            decoder.recycle();
+            try { stream.close(); } catch (IOException ignored) { }
+        }
     }
 
     @Override protected void onDestroy() {

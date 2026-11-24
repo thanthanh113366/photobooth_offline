@@ -30,6 +30,14 @@ jobs:
       - name: Install Android SDK 35
         run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Check lossless PNG writer
+        run: |
+          mkdir -p "$RUNNER_TEMP/png-check"
+          javac -d "$RUNNER_TEMP/png-check" \
+            app/src/main/java/vn/hmtruong/photobooth/LosslessPngWriter.java \
+            tools/PngWriterCheck.java
+          java -cp "$RUNNER_TEMP/png-check" vn.hmtruong.photobooth.PngWriterCheck
+
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
 

@@ -17,7 +17,7 @@ PNG lossless không làm mất chất lượng thêm khi lưu ảnh ghép, nhưn
 
 Mở thư mục này bằng Android Studio có Android SDK 35 và JDK 17. Gradle wrapper 8.14.3 đã được kèm theo; sync Gradle rồi chạy module `app` trên Android 8.0+ (API 26+). Máy chỉ cần Internet **lúc tải công cụ build lần đầu**; app đã cài chạy hoàn toàn offline.
 
-Hiện môi trường tạo dự án không có JDK, Android SDK hoặc Gradle nên chưa thể xuất APK hay chạy thử trên máy Android. Trên một số điện thoại, ảnh ghép cực lớn có thể vượt bộ nhớ; app báo lỗi thay vì hạ độ phân giải âm thầm. Giới hạn an toàn hiện là 60 triệu pixel.
+GitHub Actions đã có thể tạo APK mà không cần cài Android Studio trên máy cá nhân. Ảnh ghép được xử lý theo từng dải và ghi PNG từng dòng, không tạo bitmap toàn bộ ảnh ghép trong RAM và không đặt ngưỡng 60 triệu pixel. Thiết bị vẫn có các giới hạn thực tế về chiều ảnh mà bộ giải mã Android hỗ trợ, bộ nhớ cho một dải ảnh, bộ nhớ trống và dung lượng lưu trữ; app báo lỗi thay vì âm thầm giảm độ phân giải.
 
 ## Tạo APK bằng GitHub Actions (không cài Android Studio)
 
