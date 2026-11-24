@@ -83,7 +83,7 @@ public class MainActivity extends Activity {
             previews[i] = image;
         }
 
-        dimensions = label("Chọn 4 ảnh để xem kích thước khung cần dùng.", 14, Color.DKGRAY);
+        dimensions = label("Chọn 4 ảnh để xem kích thước ảnh ghép.", 14, Color.DKGRAY);
         body.addView(dimensions);
         Button chooseFrame = button("2. Chọn khung PNG trong suốt");
         chooseFrame.setOnClickListener(v -> pickFrame());
@@ -176,7 +176,7 @@ public class MainActivity extends Activity {
             frame = data.getData();
             persistRead(frame);
             frameLabel.setText("Khung: " + fileName(frame));
-            status.setText("Đã chọn khung. Khung cần có kích thước pixel đúng như ghi bên trên.");
+            status.setText("Đã chọn khung. App sẽ đặt khung vừa ảnh ghép, giữ nguyên độ phân giải ảnh gốc.");
         } else if (requestCode == SAVE_PNG && data.getData() != null) {
             export(data.getData());
         }
@@ -207,7 +207,7 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     for (int i = 0; i < 4; i++) previews[i].setImageBitmap(thumbs[i]);
                     dimensions.setText("Ảnh ghép: " + layout.width + " × " + layout.height
-                            + " px. Khung PNG cần đúng kích thước này.");
+                            + " px. Chọn khung PNG có cùng tỉ lệ ngang/dọc.");
                     status.setText("Sẵn sàng xuất ảnh PNG.");
                     busy = false;
                     saveButton.setEnabled(true);
@@ -233,9 +233,10 @@ public class MainActivity extends Activity {
                 Layout layout = inspect(selected);
                 if (selectedFrame != null) {
                     Size frameSize = rawSize(selectedFrame);
-                    if (frameSize.width != layout.width || frameSize.height != layout.height)
-                        throw new IOException("Khung là " + frameSize.width + " × " + frameSize.height
-                                + " px; cần " + layout.width + " × " + layout.height + " px.");
+                    double imageRatio = layout.width / (double) layout.height;
+                    double frameRatio = frameSize.width / (double) frameSize.height;
+                    if (Math.abs(imageRatio - frameRatio) / imageRatio > 0.02)
+                        throw new IOException("Tỉ lệ khung không khớp ảnh ghép. Hãy chọn khung cùng tỉ lệ ngang/dọc.");
                 }
                 try (OutputStream stream = getContentResolver().openOutputStream(destination, "w")) {
                     if (stream == null) throw new IOException("Không mở được tệp PNG để ghi.");
@@ -254,6 +255,7 @@ public class MainActivity extends Activity {
             throws IOException {
         Source[] sources = new Source[4];
         Source overlay = null;
+        Bitmap fittedFrame = null;
         Bitmap tile = null;
         try {
             for (int i = 0; i < 4; i++) {
@@ -264,7 +266,13 @@ public class MainActivity extends Activity {
                 sources[i].y = (row == 0 ? 0 : layout.rowHeights[0])
                         + (layout.rowHeights[row] - sources[i].height) / 2;
             }
-            if (selectedFrame != null) overlay = new Source(selectedFrame, ExifInterface.ORIENTATION_NORMAL);
+            if (selectedFrame != null) {
+                Size frameSize = rawSize(selectedFrame);
+                if (frameSize.width == layout.width && frameSize.height == layout.height)
+                    overlay = new Source(selectedFrame, ExifInterface.ORIENTATION_NORMAL);
+                else
+                    fittedFrame = decode(selectedFrame, 0);
+            }
 
             // The tile and one PNG row are the only buffers that grow with output width.
             int rowsPerTile = Math.max(1, Math.min(128, 2_000_000 / layout.width));
@@ -272,6 +280,8 @@ public class MainActivity extends Activity {
             Canvas canvas = new Canvas(tile);
             Paint paint = new Paint();
             paint.setFilterBitmap(false);
+            Paint framePaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+            Matrix frameTransform = new Matrix();
             int[] pixels = new int[layout.width];
             LosslessPngWriter writer = new LosslessPngWriter(stream, layout.width, layout.height);
             try {
@@ -281,6 +291,12 @@ public class MainActivity extends Activity {
                     canvas.drawColor(Color.WHITE);
                     for (Source source : sources) drawPart(canvas, source, top, rows, paint);
                     if (overlay != null) drawPart(canvas, overlay, top, rows, paint);
+                    if (fittedFrame != null) {
+                        frameTransform.setScale(layout.width / (float) fittedFrame.getWidth(),
+                                layout.height / (float) fittedFrame.getHeight());
+                        frameTransform.postTranslate(0, -top);
+                        canvas.drawBitmap(fittedFrame, frameTransform, framePaint);
+                    }
                     for (int row = 0; row < rows; row++) {
                         tile.getPixels(pixels, 0, layout.width, 0, row, layout.width, 1);
                         writer.writeRow(pixels);
@@ -301,6 +317,7 @@ public class MainActivity extends Activity {
             if (tile != null) tile.recycle();
             for (Source source : sources) if (source != null) source.close();
             if (overlay != null) overlay.close();
+            if (fittedFrame != null) fittedFrame.recycle();
         }
     }
 

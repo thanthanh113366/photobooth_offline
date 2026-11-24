@@ -7,7 +7,7 @@ App Android thuần Java, không có quyền Internet, không dùng máy chủ h
 - Chọn đúng 4 ảnh từ bộ nhớ điện thoại bằng trình chọn tệp Android.
 - Chọn một khung PNG trong suốt (không bắt buộc).
 - Ghép 4 ảnh thành lưới 2 × 2, giữ nguyên kích thước pixel và tỉ lệ của từng ảnh; vùng dư có nền trắng.
-- Áp khung PNG lên trên ảnh ghép. Khung phải có **đúng kích thước pixel** của ảnh ghép để không cần phóng to hay thu nhỏ. App hiển thị kích thước cần dùng sau khi chọn ảnh.
+- Áp khung PNG lên trên ảnh ghép. Khung có cùng tỉ lệ ngang/dọc sẽ được đặt vừa ảnh ghép; **bốn ảnh gốc không bị thu nhỏ**. Khung có đúng kích thước pixel được đọc theo từng dải, còn khung nhỏ hơn sẽ được phóng lên và có thể mềm nét hơn.
 - Lưu ảnh ghép PNG lossless vào vị trí người dùng chọn. Không giảm kích thước hoặc xuất JPEG.
 - Xoay ảnh theo EXIF trước khi ghép.
 
@@ -18,6 +18,10 @@ PNG lossless không làm mất chất lượng thêm khi lưu ảnh ghép, nhưn
 Mở thư mục này bằng Android Studio có Android SDK 35 và JDK 17. Gradle wrapper 8.14.3 đã được kèm theo; sync Gradle rồi chạy module `app` trên Android 8.0+ (API 26+). Máy chỉ cần Internet **lúc tải công cụ build lần đầu**; app đã cài chạy hoàn toàn offline.
 
 GitHub Actions đã có thể tạo APK mà không cần cài Android Studio trên máy cá nhân. Ảnh ghép được xử lý theo từng dải và ghi PNG từng dòng, không tạo bitmap toàn bộ ảnh ghép trong RAM và không đặt ngưỡng 60 triệu pixel. Thiết bị vẫn có các giới hạn thực tế về chiều ảnh mà bộ giải mã Android hỗ trợ, bộ nhớ cho một dải ảnh, bộ nhớ trống và dung lượng lưu trữ; app báo lỗi thay vì âm thầm giảm độ phân giải.
+
+## Khung mẫu
+
+[Graduation · UIT · HaMinhTruong — đen vintage](frames/graduation-uit-haminhtruong-vintage-black.png) là khung PNG 1024 × 1536 px, gồm bốn ô trong suốt để đặt ảnh. Có thể tải tệp PNG này vào app ở bước chọn khung. Khung dùng đẹp nhất khi bốn ảnh đầu vào có cùng tỉ lệ dọc 2:3.
 
 ## Tạo APK bằng GitHub Actions (không cài Android Studio)
 
