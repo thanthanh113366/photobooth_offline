@@ -43,8 +43,11 @@ public class MainActivity extends Activity {
     private static final int PICK_FRAME = 2;
     private static final int SAVE_PNG = 3;
     private static final int SAVE_PRINT_PNG = 4;
+    private static final int SAVE_DETAIL_PNG = 5;
     private static final int PRINT_WIDTH_PX = 1200;
     private static final int PRINT_HEIGHT_PX = 1776; // 10 × 14.8 cm at about 305 DPI.
+    private static final int DETAIL_WIDTH_PX = 2400;
+    private static final int DETAIL_HEIGHT_PX = 3552;
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final List<Uri> photos = new ArrayList<>();
@@ -54,6 +57,7 @@ public class MainActivity extends Activity {
     private TextView frameLabel;
     private Button saveButton;
     private Button printButton;
+    private Button detailButton;
     private EditorPreview preview;
     private TextView editLabel;
     private TextView frameRatioLabel;
@@ -128,6 +132,9 @@ public class MainActivity extends Activity {
         printButton = button("4. Lưu PNG bản in nhanh (10 × 14,8 cm · 305 DPI)");
         printButton.setOnClickListener(v -> save(true));
         body.addView(printButton);
+        detailButton = button("5. Lưu PNG nét hơn khi phóng to (2400 × 3552 px)");
+        detailButton.setOnClickListener(v -> save(SAVE_DETAIL_PNG));
+        body.addView(detailButton);
         status = label("Tất cả ảnh được xử lý trên điện thoại.", 14, Color.rgb(16, 55, 119));
         body.addView(status);
 
@@ -211,9 +218,11 @@ public class MainActivity extends Activity {
         startActivityForResult(intent, PICK_FRAME);
     }
 
-    private void save() { save(false); }
+    private void save() { save(SAVE_PNG); }
 
-    private void save(boolean printSize) {
+    private void save(boolean printSize) { save(printSize ? SAVE_PRINT_PNG : SAVE_PNG); }
+
+    private void save(int mode) {
         if (busy) return;
         if (photos.size() != 4) {
             status.setText("Vui lòng chọn đúng 4 ảnh.");
@@ -222,9 +231,10 @@ public class MainActivity extends Activity {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("image/png");
-        intent.putExtra(Intent.EXTRA_TITLE, "photobooth-" + (printSize ? "print-" : "")
+        String label = mode == SAVE_DETAIL_PNG ? "detail-" : mode == SAVE_PRINT_PNG ? "print-" : "";
+        intent.putExtra(Intent.EXTRA_TITLE, "photobooth-" + label
                 + System.currentTimeMillis() + ".png");
-        startActivityForResult(intent, printSize ? SAVE_PRINT_PNG : SAVE_PNG);
+        startActivityForResult(intent, mode);
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -256,9 +266,10 @@ public class MainActivity extends Activity {
             frameRatioBar.setEnabled(true);
             status.setText("Đã chọn khung. Đang cập nhật bản xem trước…");
             if (photos.size() == 4) refreshPreview();
-        } else if ((requestCode == SAVE_PNG || requestCode == SAVE_PRINT_PNG)
+        } else if ((requestCode == SAVE_PNG || requestCode == SAVE_PRINT_PNG
+                || requestCode == SAVE_DETAIL_PNG)
                 && data.getData() != null) {
-            export(data.getData(), requestCode == SAVE_PRINT_PNG);
+            export(data.getData(), requestCode);
         }
     }
 
@@ -278,6 +289,7 @@ public class MainActivity extends Activity {
         busy = true;
         saveButton.setEnabled(false);
         printButton.setEnabled(false);
+        detailButton.setEnabled(false);
         status.setText("Đang đọc thông tin ảnh…");
         List<Uri> selected = new ArrayList<>(photos);
         Uri selectedFrame = frame;
@@ -305,6 +317,7 @@ public class MainActivity extends Activity {
                     busy = false;
                     saveButton.setEnabled(true);
                     printButton.setEnabled(true);
+                    detailButton.setEnabled(true);
                 });
             } catch (Exception | OutOfMemoryError e) {
                 runOnUiThread(() -> {
@@ -312,6 +325,7 @@ public class MainActivity extends Activity {
                     busy = false;
                     saveButton.setEnabled(true);
                     printButton.setEnabled(true);
+                    detailButton.setEnabled(true);
                 });
             }
         });
@@ -333,11 +347,13 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void export(Uri destination, boolean printSize) {
+    private void export(Uri destination, int mode) {
         busy = true;
         saveButton.setEnabled(false);
         printButton.setEnabled(false);
-        status.setText(printSize ? "Đang ghép PNG cỡ in…" : "Đang ghép ảnh nguyên kích thước…");
+        detailButton.setEnabled(false);
+        boolean reducedSize = mode != SAVE_PNG;
+        status.setText(reducedSize ? "Đang ghép PNG cỡ in…" : "Đang ghép ảnh nguyên kích thước…");
         List<Uri> selected = new ArrayList<>(photos);
         Uri selectedFrame = frame;
         float selectedFrameWidth = frameWidthScale;
@@ -347,12 +363,14 @@ public class MainActivity extends Activity {
             long started = SystemClock.elapsedRealtime();
             try {
                 Layout layout = inspect(selected);
-                Layout outputLayout = printSize
-                        ? new Layout(PRINT_WIDTH_PX, PRINT_HEIGHT_PX,
-                                new int[]{PRINT_WIDTH_PX / 2, PRINT_WIDTH_PX / 2},
-                                new int[]{PRINT_HEIGHT_PX / 2, PRINT_HEIGHT_PX / 2})
+                int outputWidth = mode == SAVE_DETAIL_PNG ? DETAIL_WIDTH_PX : PRINT_WIDTH_PX;
+                int outputHeight = mode == SAVE_DETAIL_PNG ? DETAIL_HEIGHT_PX : PRINT_HEIGHT_PX;
+                Layout outputLayout = reducedSize
+                        ? new Layout(outputWidth, outputHeight,
+                                new int[]{outputWidth / 2, outputWidth / 2},
+                                new int[]{outputHeight / 2, outputHeight / 2})
                         : layout;
-                if (printSize) {
+                if (reducedSize) {
                     float scale = outputLayout.width / (float) layout.width;
                     for (PhotoEdit edit : selectedEdits) edit.zoom *= scale;
                 }
@@ -360,7 +378,7 @@ public class MainActivity extends Activity {
                 try (OutputStream stream = getContentResolver().openOutputStream(destination, "w")) {
                     if (stream == null) throw new IOException("Không mở được tệp PNG để ghi.");
                     stats = renderTiled(selected, selectedFrame, outputLayout, selectedEdits,
-                            selectedFrameWidth, printSize, stream);
+                            selectedFrameWidth, reducedSize, stream);
                 }
                 long total = SystemClock.elapsedRealtime() - started;
                 String summary = String.format(Locale.getDefault(),
@@ -376,6 +394,7 @@ public class MainActivity extends Activity {
                     busy = false;
                     saveButton.setEnabled(true);
                     printButton.setEnabled(true);
+                    detailButton.setEnabled(true);
                 });
             }
         });
