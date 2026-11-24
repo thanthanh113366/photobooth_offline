@@ -42,6 +42,9 @@ public class MainActivity extends Activity {
     private static final int PICK_PHOTOS = 1;
     private static final int PICK_FRAME = 2;
     private static final int SAVE_PNG = 3;
+    private static final int SAVE_PRINT_PNG = 4;
+    private static final int PRINT_WIDTH_PX = 1200;
+    private static final int PRINT_HEIGHT_PX = 1776; // 10 × 14.8 cm at about 305 DPI.
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final List<Uri> photos = new ArrayList<>();
@@ -50,6 +53,7 @@ public class MainActivity extends Activity {
     private TextView dimensions;
     private TextView frameLabel;
     private Button saveButton;
+    private Button printButton;
     private EditorPreview preview;
     private TextView editLabel;
     private TextView frameRatioLabel;
@@ -121,6 +125,9 @@ public class MainActivity extends Activity {
         saveButton = button("3. Lưu ảnh PNG không mất dữ liệu");
         saveButton.setOnClickListener(v -> save());
         body.addView(saveButton);
+        printButton = button("4. Lưu PNG bản in nhanh (10 × 14,8 cm · 305 DPI)");
+        printButton.setOnClickListener(v -> save(true));
+        body.addView(printButton);
         status = label("Tất cả ảnh được xử lý trên điện thoại.", 14, Color.rgb(16, 55, 119));
         body.addView(status);
 
@@ -204,7 +211,9 @@ public class MainActivity extends Activity {
         startActivityForResult(intent, PICK_FRAME);
     }
 
-    private void save() {
+    private void save() { save(false); }
+
+    private void save(boolean printSize) {
         if (busy) return;
         if (photos.size() != 4) {
             status.setText("Vui lòng chọn đúng 4 ảnh.");
@@ -213,8 +222,9 @@ public class MainActivity extends Activity {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("image/png");
-        intent.putExtra(Intent.EXTRA_TITLE, "photobooth-" + System.currentTimeMillis() + ".png");
-        startActivityForResult(intent, SAVE_PNG);
+        intent.putExtra(Intent.EXTRA_TITLE, "photobooth-" + (printSize ? "print-" : "")
+                + System.currentTimeMillis() + ".png");
+        startActivityForResult(intent, printSize ? SAVE_PRINT_PNG : SAVE_PNG);
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -246,8 +256,9 @@ public class MainActivity extends Activity {
             frameRatioBar.setEnabled(true);
             status.setText("Đã chọn khung. Đang cập nhật bản xem trước…");
             if (photos.size() == 4) refreshPreview();
-        } else if (requestCode == SAVE_PNG && data.getData() != null) {
-            export(data.getData());
+        } else if ((requestCode == SAVE_PNG || requestCode == SAVE_PRINT_PNG)
+                && data.getData() != null) {
+            export(data.getData(), requestCode == SAVE_PRINT_PNG);
         }
     }
 
@@ -266,6 +277,7 @@ public class MainActivity extends Activity {
     private void refreshPreview() {
         busy = true;
         saveButton.setEnabled(false);
+        printButton.setEnabled(false);
         status.setText("Đang đọc thông tin ảnh…");
         List<Uri> selected = new ArrayList<>(photos);
         Uri selectedFrame = frame;
@@ -292,12 +304,14 @@ public class MainActivity extends Activity {
                     status.setText("Sẵn sàng xuất ảnh PNG.");
                     busy = false;
                     saveButton.setEnabled(true);
+                    printButton.setEnabled(true);
                 });
             } catch (Exception | OutOfMemoryError e) {
                 runOnUiThread(() -> {
                     status.setText("Không đọc được ảnh: " + e.getMessage());
                     busy = false;
                     saveButton.setEnabled(true);
+                    printButton.setEnabled(true);
                 });
             }
         });
@@ -319,10 +333,11 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void export(Uri destination) {
+    private void export(Uri destination, boolean printSize) {
         busy = true;
         saveButton.setEnabled(false);
-        status.setText("Đang ghép ảnh nguyên kích thước…");
+        printButton.setEnabled(false);
+        status.setText(printSize ? "Đang ghép PNG cỡ in…" : "Đang ghép ảnh nguyên kích thước…");
         List<Uri> selected = new ArrayList<>(photos);
         Uri selectedFrame = frame;
         float selectedFrameWidth = frameWidthScale;
@@ -332,29 +347,43 @@ public class MainActivity extends Activity {
             long started = SystemClock.elapsedRealtime();
             try {
                 Layout layout = inspect(selected);
+                Layout outputLayout = printSize
+                        ? new Layout(PRINT_WIDTH_PX, PRINT_HEIGHT_PX,
+                                new int[]{PRINT_WIDTH_PX / 2, PRINT_WIDTH_PX / 2},
+                                new int[]{PRINT_HEIGHT_PX / 2, PRINT_HEIGHT_PX / 2})
+                        : layout;
+                if (printSize) {
+                    float scale = outputLayout.width / (float) layout.width;
+                    for (PhotoEdit edit : selectedEdits) edit.zoom *= scale;
+                }
                 RenderStats stats;
                 try (OutputStream stream = getContentResolver().openOutputStream(destination, "w")) {
                     if (stream == null) throw new IOException("Không mở được tệp PNG để ghi.");
-                    stats = renderTiled(selected, selectedFrame, layout, selectedEdits,
-                            selectedFrameWidth, stream);
+                    stats = renderTiled(selected, selectedFrame, outputLayout, selectedEdits,
+                            selectedFrameWidth, printSize, stream);
                 }
                 long total = SystemClock.elapsedRealtime() - started;
                 String summary = String.format(Locale.getDefault(),
                         "Đã lưu PNG %d × %d px · Tổng %.1f giây\n"
                                 + "Chuẩn bị %.1f · Ghép ảnh %.1f · Khung %.1f · Nén/ghi PNG %.1f giây",
-                        layout.width, layout.height, total / 1000.0, stats.setupMs / 1000.0,
+                        outputLayout.width, outputLayout.height, total / 1000.0, stats.setupMs / 1000.0,
                         stats.photoMs / 1000.0, stats.frameMs / 1000.0, stats.pngMs / 1000.0);
                 runOnUiThread(() -> status.setText(summary));
             } catch (Exception | OutOfMemoryError e) {
                 runOnUiThread(() -> status.setText("Xuất ảnh thất bại: " + e.getMessage()));
             } finally {
-                runOnUiThread(() -> { busy = false; saveButton.setEnabled(true); });
+                runOnUiThread(() -> {
+                    busy = false;
+                    saveButton.setEnabled(true);
+                    printButton.setEnabled(true);
+                });
             }
         });
     }
 
     private RenderStats renderTiled(List<Uri> selected, Uri selectedFrame, Layout layout,
-                                    PhotoEdit[] selectedEdits, float selectedFrameWidth, OutputStream stream)
+                                    PhotoEdit[] selectedEdits, float selectedFrameWidth,
+                                    boolean printSize, OutputStream stream)
             throws IOException {
         RenderStats stats = new RenderStats();
         long setupStart = SystemClock.elapsedRealtime();
@@ -368,11 +397,11 @@ public class MainActivity extends Activity {
             }
             if (selectedFrame != null) {
                 Size frameSize = rawSize(selectedFrame);
-                if (selectedFrameWidth == 1f
+                if (!printSize && selectedFrameWidth == 1f
                         && frameSize.width == layout.width && frameSize.height == layout.height)
                     overlay = new Source(selectedFrame, ExifInterface.ORIENTATION_NORMAL);
                 else
-                    fittedFrame = decode(selectedFrame, 0);
+                    fittedFrame = decode(selectedFrame, printSize ? 2400 : 0);
             }
 
             // The tile and one PNG row are the only buffers that grow with output width.
