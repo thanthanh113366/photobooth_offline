@@ -16,7 +16,10 @@ final class LosslessPngWriter {
     private final OutputStream output;
     private final IdatChunks chunks;
     private final DeflaterOutputStream compressed;
-    private final byte[] row;
+    private final byte[] current;
+    private final byte[] previous;
+    private final byte[] candidate;
+    private final byte[] best;
     private final int width;
     private final int height;
     private int writtenRows;
@@ -28,7 +31,11 @@ final class LosslessPngWriter {
         this.output = output;
         this.width = width;
         this.height = height;
-        this.row = new byte[1 + width * 3];
+        int stride = width * 3;
+        this.current = new byte[stride];
+        this.previous = new byte[stride];
+        this.candidate = new byte[1 + stride];
+        this.best = new byte[1 + stride];
         output.write(SIGNATURE);
         byte[] header = new byte[13];
         putInt(header, 0, width);
@@ -43,16 +50,52 @@ final class LosslessPngWriter {
     void writeRow(int[] argb) throws IOException {
         if (finished || writtenRows >= height || argb.length < width)
             throw new IOException("Số dòng PNG không hợp lệ.");
-        row[0] = 0; // PNG filter None: pixel values remain exact.
-        int offset = 1;
+        int offset = 0;
         for (int x = 0; x < width; x++) {
             int pixel = argb[x];
-            row[offset++] = (byte) (pixel >>> 16);
-            row[offset++] = (byte) (pixel >>> 8);
-            row[offset++] = (byte) pixel;
+            current[offset++] = (byte) (pixel >>> 16);
+            current[offset++] = (byte) (pixel >>> 8);
+            current[offset++] = (byte) pixel;
         }
-        compressed.write(row);
+        long bestScore = Long.MAX_VALUE;
+        for (int filter = 0; filter <= 4; filter++) {
+            candidate[0] = (byte) filter;
+            long score = 0;
+            for (int i = 0; i < current.length; i++) {
+                int raw = current[i] & 0xff;
+                int left = i >= 3 ? current[i - 3] & 0xff : 0;
+                int up = previous[i] & 0xff;
+                int upperLeft = i >= 3 ? previous[i - 3] & 0xff : 0;
+                int predictor;
+                switch (filter) {
+                    case 1: predictor = left; break;
+                    case 2: predictor = up; break;
+                    case 3: predictor = (left + up) / 2; break;
+                    case 4: predictor = paeth(left, up, upperLeft); break;
+                    default: predictor = 0;
+                }
+                byte residual = (byte) (raw - predictor);
+                candidate[i + 1] = residual;
+                score += Math.abs((int) residual);
+            }
+            if (score < bestScore) {
+                bestScore = score;
+                System.arraycopy(candidate, 0, best, 0, candidate.length);
+            }
+        }
+        compressed.write(best);
+        System.arraycopy(current, 0, previous, 0, current.length);
         writtenRows++;
+    }
+
+    private static int paeth(int left, int up, int upperLeft) {
+        int predicted = left + up - upperLeft;
+        int leftDistance = Math.abs(predicted - left);
+        int upDistance = Math.abs(predicted - up);
+        int upperLeftDistance = Math.abs(predicted - upperLeft);
+        if (leftDistance <= upDistance && leftDistance <= upperLeftDistance) return left;
+        if (upDistance <= upperLeftDistance) return up;
+        return upperLeft;
     }
 
     void finish() throws IOException {

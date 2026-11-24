@@ -12,7 +12,7 @@ App Android thuần Java, không có quyền Internet, không dùng máy chủ h
 - Lưu ảnh ghép PNG lossless vào vị trí người dùng chọn. Không giảm kích thước hoặc xuất JPEG.
 - Xoay ảnh theo EXIF trước khi ghép.
 
-PNG lossless không làm mất chất lượng thêm khi lưu ảnh ghép, nhưng kích thước tệp không nhất thiết bằng tổng kích thước các JPG gốc. Bốn ảnh 5 MB không thể được cam kết tạo ra đúng một ảnh 20 MB; kích thước phụ thuộc dữ liệu pixel và thuật toán nén PNG. App giữ nguyên độ phân giải ảnh đầu vào, còn metadata và byte của từng tệp gốc không nằm trong PNG ghép. Nếu cần giữ nguyên byte của ảnh gốc, phải lưu thêm các tệp gốc riêng (ví dụ ZIP).
+PNG lossless không làm mất chất lượng thêm khi lưu ảnh ghép, nhưng kích thước tệp không nhất thiết bằng tổng kích thước các JPG gốc. Bốn ảnh 5 MB không thể được cam kết tạo ra đúng một ảnh 20 MB; ảnh JPEG đã được nén mất dữ liệu, còn ảnh ghép PNG giữ dữ liệu pixel và có thể lớn hơn nhiều lần. Bộ ghi PNG thử năm bộ lọc dự đoán chuẩn trên từng dòng rồi chọn kết quả dễ nén nhất, không thay đổi pixel khi giải mã. App giữ nguyên độ phân giải ảnh đầu vào, còn metadata và byte của từng tệp gốc không nằm trong PNG ghép. Nếu cần giữ nguyên byte của ảnh gốc, phải lưu thêm các tệp gốc riêng (ví dụ ZIP).
 
 ## Mở và chạy
 
