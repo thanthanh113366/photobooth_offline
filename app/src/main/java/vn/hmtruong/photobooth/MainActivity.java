@@ -599,34 +599,23 @@ public class MainActivity extends Activity {
 
     private void drawRecipientMessage(Canvas canvas, Layout layout, int top, int rows, String recipient) {
         if (recipient == null || recipient.isEmpty()) return;
-        float footerTop = layout.height * 1436f / 1536f;
-        float footerBottom = layout.height * 1501f / 1536f;
+        float footerTop = layout.height * 1437f / 1536f;
+        float footerBottom = layout.height * 1468f / 1536f;
         if (top >= footerBottom || top + rows <= footerTop) return;
 
         canvas.save();
         canvas.translate(0, -top);
         canvas.scale(layout.width / 1024f, layout.height / 1536f);
-        RectF plaque = new RectF(220, 1437, 804, 1500);
-        Paint background = new Paint(Paint.ANTI_ALIAS_FLAG);
-        background.setColor(Color.rgb(19, 17, 14));
-        canvas.drawRoundRect(plaque, 12, 12, background);
-        Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
-        border.setColor(Color.rgb(151, 113, 56));
-        border.setStyle(Paint.Style.STROKE);
-        border.setStrokeWidth(1.5f);
-        canvas.drawRoundRect(plaque, 12, 12, border);
-
         Paint lettering = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
         lettering.setColor(Color.rgb(234, 194, 120));
         lettering.setTypeface(Typeface.create("serif", Typeface.ITALIC));
         lettering.setTextAlign(Paint.Align.CENTER);
-        lettering.setTextSize(23f);
-        String firstLine = "cảm ơn " + recipient;
-        if (lettering.measureText(firstLine) > 540f)
-            lettering.setTextSize(23f * 540f / lettering.measureText(firstLine));
-        canvas.drawText(firstLine, 512, 1461, lettering);
-        lettering.setTextSize(23f);
-        canvas.drawText("đã đến dự lễ tốt nghiệp của mình", 512, 1492, lettering);
+        lettering.setShadowLayer(1.8f, 0, 1, Color.rgb(16, 12, 8));
+        lettering.setTextSize(19f);
+        String message = "tri ân " + recipient + " đã đến dự lễ tốt nghiệp của mình";
+        float width = lettering.measureText(message);
+        if (width > 650f) lettering.setTextSize(19f * 650f / width);
+        canvas.drawText(message, 512, 1458, lettering);
         canvas.restore();
     }
 
