@@ -52,6 +52,7 @@ public class MainActivity extends Activity {
     private static final int PRINT_HEIGHT_PX = 1776; // 10 × 14.8 cm at about 305 DPI.
     private static final int DETAIL_WIDTH_PX = 2400;
     private static final int DETAIL_HEIGHT_PX = 3552;
+    private static final float PRINT_CONTENT_SCALE = 0.95f;
     private static final String[] RECIPIENTS = {
             "Nguyễn Trịnh Thủy Tiên", "Lê Đức Anh", "Mai Huỳnh Tuấn Anh",
             "Nguyễn Lê Yến Nhi", "Trần Hữu Kim Quý", "Nguyễn Ngọc Khánh Vân",
@@ -185,6 +186,8 @@ public class MainActivity extends Activity {
         detailButton = button("5. Lưu PNG nét hơn khi phóng to (2400 × 3552 px)");
         detailButton.setOnClickListener(v -> save(SAVE_DETAIL_PNG));
         body.addView(detailButton);
+        body.addView(label("Hai bản in chừa mép trắng khoảng 2,5 mm hai bên và 3,7 mm trên dưới.",
+                13, Color.DKGRAY));
         status = label("Tất cả ảnh được xử lý trên điện thoại.", 14, Color.rgb(16, 55, 119));
         body.addView(status);
 
@@ -524,6 +527,15 @@ public class MainActivity extends Activity {
         Bitmap fittedFrame = null;
         Bitmap tile = null;
         try {
+            int contentWidth = printSize ? Math.round(layout.width * PRINT_CONTENT_SCALE) : layout.width;
+            int contentHeight = printSize ? Math.round(layout.height * PRINT_CONTENT_SCALE) : layout.height;
+            int insetX = (layout.width - contentWidth) / 2;
+            int insetY = (layout.height - contentHeight) / 2;
+            Layout contentLayout = printSize
+                    ? layoutWithFrame(evenLayout(contentWidth, contentHeight,
+                            layout.colWidths.length, layout.rowHeights.length),
+                            selectedFrame, selectedFrameWidth)
+                    : layout;
             for (int i = 0; i < selected.size(); i++) {
                 sources[i] = new Source(selected.get(i), orientation(selected.get(i)));
             }
@@ -552,21 +564,28 @@ public class MainActivity extends Activity {
                 int lastProgress = -1;
                 for (int top = 0; top < layout.height; ) {
                     int rows = Math.min(rowsPerTile, layout.height - top);
+                    int contentTop = top - insetY;
                     canvas.drawColor(Color.WHITE);
+                    canvas.save();
+                    canvas.translate(insetX, 0);
+                    canvas.clipRect(0, insetY - top, contentWidth,
+                            insetY - top + contentHeight);
                     long stageStart = SystemClock.elapsedRealtime();
                     for (int i = 0; i < selected.size(); i++)
-                        drawPhotoPart(canvas, sources[i], layout, i, selectedEdits[i], top, rows, paint);
+                        drawPhotoPart(canvas, sources[i], contentLayout, i,
+                                selectedEdits[i], contentTop, rows, paint);
                     stats.photoMs += SystemClock.elapsedRealtime() - stageStart;
                     stageStart = SystemClock.elapsedRealtime();
-                    if (overlay != null) drawPart(canvas, overlay, top, rows, paint);
+                    if (overlay != null) drawPart(canvas, overlay, contentTop, rows, paint);
                     if (fittedFrame != null) {
-                        frameTransform.setScale(layout.width * selectedFrameWidth / fittedFrame.getWidth(),
-                                layout.height / (float) fittedFrame.getHeight());
-                        frameTransform.postTranslate(layout.width * (1f - selectedFrameWidth) / 2f,
-                                -top);
+                        frameTransform.setScale(contentWidth * selectedFrameWidth / fittedFrame.getWidth(),
+                                contentHeight / (float) fittedFrame.getHeight());
+                        frameTransform.postTranslate(contentWidth * (1f - selectedFrameWidth) / 2f,
+                                -contentTop);
                         canvas.drawBitmap(fittedFrame, frameTransform, framePaint);
                     }
-                    drawRecipientMessage(canvas, layout, top, rows, recipient);
+                    drawRecipientMessage(canvas, contentLayout, contentTop, rows, recipient);
+                    canvas.restore();
                     stats.frameMs += SystemClock.elapsedRealtime() - stageStart;
                     stageStart = SystemClock.elapsedRealtime();
                     for (int row = 0; row < rows; row++) {
