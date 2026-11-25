@@ -52,7 +52,7 @@ public class MainActivity extends Activity {
     private static final int PRINT_HEIGHT_PX = 1776; // 10 × 14.8 cm at about 305 DPI.
     private static final int DETAIL_WIDTH_PX = 2400;
     private static final int DETAIL_HEIGHT_PX = 3552;
-    private static final float PRINT_CONTENT_SCALE = 0.95f;
+    private static final float PRINT_CONTENT_SCALE = 0.99f;
     private static final String[] RECIPIENTS = {
             "Nguyễn Trịnh Thủy Tiên", "Lê Đức Anh", "Mai Huỳnh Tuấn Anh",
             "Nguyễn Lê Yến Nhi", "Trần Hữu Kim Quý", "Nguyễn Ngọc Khánh Vân",
@@ -186,7 +186,7 @@ public class MainActivity extends Activity {
         detailButton = button("5. Lưu PNG nét hơn khi phóng to (2400 × 3552 px)");
         detailButton.setOnClickListener(v -> save(SAVE_DETAIL_PNG));
         body.addView(detailButton);
-        body.addView(label("Hai bản in chừa mép trắng khoảng 2,5 mm hai bên và 3,7 mm trên dưới.",
+        body.addView(label("Hai bản in chừa mép trắng khoảng 0,5 mm hai bên và 0,75 mm trên dưới.",
                 13, Color.DKGRAY));
         status = label("Tất cả ảnh được xử lý trên điện thoại.", 14, Color.rgb(16, 55, 119));
         body.addView(status);
