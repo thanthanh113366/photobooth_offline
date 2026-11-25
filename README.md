@@ -6,6 +6,7 @@ App Android thuần Java, không có quyền Internet, không dùng máy chủ h
 
 - Chọn chế độ 1, 2, 4 hoặc 8 ảnh, rồi chọn đúng số ảnh đó từ bộ nhớ điện thoại. Bố cục lần lượt là 1 ô, 2 ô xếp dọc, 2 × 2 và 2 × 4.
 - Mỗi chế độ tự chọn khung Graduation · UIT · HaMinhTruong đen vàng vintage có sẵn trong APK. Có thể thay bằng khung PNG trong suốt của bạn rồi trở lại khung có sẵn bằng nút riêng.
+- Sau khi chọn ảnh và khung, có thể chọn người nhận trong danh sách 33 bạn. Bản xem trước và PNG xuất ra sẽ có hai dòng chữ vàng kiểu serif nghiêng dưới “HaMinhTruong”: “cảm ơn [tên người nhận]” và “đã đến dự lễ tốt nghiệp của mình”. Để mục “Chọn người nhận” nếu muốn xuất ảnh không có lời cảm ơn.
 - Chạm một ô trong bản xem trước để chỉnh riêng ảnh đó: kéo để dịch, chụm hai ngón hoặc dùng thanh trượt để zoom 25–400%, dùng thanh trượt để xoay -180° đến 180°. Ở mức 100%, ảnh được căn vừa để phủ kín ô ảnh của khung.
 - Bản xem trước hiển thị khung chồng lên ảnh và phần ảnh bị cắt. App nới canvas để ảnh xuất có tỉ lệ cố định **10 × 14,8 cm (25:37)**, bất kể tỉ lệ của ảnh hoặc khung đầu vào. Thanh trượt chỉnh độ rộng khung 70–130% trên canvas này.
 - Áp khung PNG lên trên ảnh ghép. Khung nhỏ hơn sẽ được phóng lên và có thể mềm nét hơn. Ảnh đầu vào được đọc ở độ phân giải gốc khi xuất bản nguyên kích thước; thao tác căn vừa, zoom và xoay có thể nội suy hoặc cắt ảnh.

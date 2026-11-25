@@ -12,6 +12,7 @@ import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.Typeface;
 import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Bundle;
@@ -51,6 +52,20 @@ public class MainActivity extends Activity {
     private static final int PRINT_HEIGHT_PX = 1776; // 10 × 14.8 cm at about 305 DPI.
     private static final int DETAIL_WIDTH_PX = 2400;
     private static final int DETAIL_HEIGHT_PX = 3552;
+    private static final String[] RECIPIENTS = {
+            "Nguyễn Trịnh Thủy Tiên", "Lê Đức Anh", "Mai Huỳnh Tuấn Anh",
+            "Nguyễn Lê Yến Nhi", "Trần Hữu Kim Quý", "Nguyễn Ngọc Khánh Vân",
+            "Nguyễn Hoài Nam", "Phạm Mai Diệu Thảo", "Hoàng Thị Thúy Hòa",
+            "Phan Thị Gia Như", "Nguyễn Ngọc Kim Chi",
+            "Trần Lê Gia Bảo", "Nguyễn Ngọc Anh Thư", "Ngô Thị Thúy Lan",
+            "Trần Thiên Ân", "Nguyễn Huy Hoàng", "Nguyễn Minh Nhật",
+            "Nguyễn Đức Thái Bảo", "Trần Minh Huấn", "Vũ Tiến Thành",
+            "Vũ Phước Điền", "Hoàng Ngọc", "Nguyễn Ngọc Minh Thư",
+            "Nguyễn Hoàng Quân", "Nguyễn Gia Phú", "Nông Nhựt Quy",
+            "Mai Xuân Tuấn", "Huỳnh Thái Bảo", "Nguyễn Trần Nhật Trung",
+            "Nguyễn Minh Phú", "Nguyễn Thị Minh Phú", "Nguyễn Đức Huy",
+            "Dương Phước Tài"
+    };
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final List<Uri> photos = new ArrayList<>();
@@ -63,6 +78,7 @@ public class MainActivity extends Activity {
     private Button detailButton;
     private Button choosePhotosButton;
     private Spinner countSelector;
+    private Spinner recipientSelector;
     private EditorPreview preview;
     private TextView editLabel;
     private TextView frameRatioLabel;
@@ -75,6 +91,7 @@ public class MainActivity extends Activity {
     private int photoCount = 4;
     private int selectedPhoto;
     private float frameWidthScale = 1f;
+    private String recipientName;
     private boolean settingControls;
     private volatile boolean busy;
 
@@ -142,6 +159,22 @@ public class MainActivity extends Activity {
                     else preview.invalidate();
                 });
         frameRatioBar.setEnabled(false);
+
+        body.addView(label("Người nhận lời cảm ơn", 15, Color.DKGRAY));
+        recipientSelector = new Spinner(this);
+        String[] recipientChoices = new String[RECIPIENTS.length + 1];
+        recipientChoices[0] = "Chọn người nhận";
+        System.arraycopy(RECIPIENTS, 0, recipientChoices, 1, RECIPIENTS.length);
+        recipientSelector.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item, recipientChoices));
+        recipientSelector.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                recipientName = position == 0 ? null : RECIPIENTS[position - 1];
+                preview.invalidate();
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        body.addView(recipientSelector);
 
         saveButton = button("3. Lưu ảnh PNG không mất dữ liệu");
         saveButton.setOnClickListener(v -> save());
@@ -362,6 +395,7 @@ public class MainActivity extends Activity {
         printButton.setEnabled(false);
         detailButton.setEnabled(false);
         countSelector.setEnabled(false);
+        recipientSelector.setEnabled(false);
         status.setText("Đang đọc thông tin ảnh…");
         List<Uri> selected = new ArrayList<>(photos);
         Uri selectedFrame = frame;
@@ -391,6 +425,7 @@ public class MainActivity extends Activity {
                     printButton.setEnabled(true);
                     detailButton.setEnabled(true);
                     countSelector.setEnabled(true);
+                    recipientSelector.setEnabled(true);
                 });
             } catch (Exception | OutOfMemoryError e) {
                 runOnUiThread(() -> {
@@ -400,6 +435,7 @@ public class MainActivity extends Activity {
                     printButton.setEnabled(true);
                     detailButton.setEnabled(true);
                     countSelector.setEnabled(true);
+                    recipientSelector.setEnabled(true);
                 });
             }
         });
@@ -429,11 +465,13 @@ public class MainActivity extends Activity {
         printButton.setEnabled(false);
         detailButton.setEnabled(false);
         countSelector.setEnabled(false);
+        recipientSelector.setEnabled(false);
         boolean reducedSize = mode != SAVE_PNG;
         status.setText(reducedSize ? "Đang ghép PNG cỡ in…" : "Đang ghép ảnh nguyên kích thước…");
         List<Uri> selected = new ArrayList<>(photos);
         Uri selectedFrame = frame;
         float selectedFrameWidth = frameWidthScale;
+        String selectedRecipient = recipientName;
         PhotoEdit[] selectedEdits = new PhotoEdit[selected.size()];
         for (int i = 0; i < selected.size(); i++) selectedEdits[i] = edits[i].copy();
         worker.execute(() -> {
@@ -451,7 +489,7 @@ public class MainActivity extends Activity {
                 try (OutputStream stream = getContentResolver().openOutputStream(destination, "w")) {
                     if (stream == null) throw new IOException("Không mở được tệp PNG để ghi.");
                     stats = renderTiled(selected, selectedFrame, outputLayout, selectedEdits,
-                            selectedFrameWidth, reducedSize, stream);
+                            selectedFrameWidth, reducedSize, selectedRecipient, stream);
                 }
                 long total = SystemClock.elapsedRealtime() - started;
                 String summary = String.format(Locale.getDefault(),
@@ -469,6 +507,7 @@ public class MainActivity extends Activity {
                     printButton.setEnabled(true);
                     detailButton.setEnabled(true);
                     countSelector.setEnabled(true);
+                    recipientSelector.setEnabled(true);
                 });
             }
         });
@@ -476,7 +515,7 @@ public class MainActivity extends Activity {
 
     private RenderStats renderTiled(List<Uri> selected, Uri selectedFrame, Layout layout,
                                     PhotoEdit[] selectedEdits, float selectedFrameWidth,
-                                    boolean printSize, OutputStream stream)
+                                    boolean printSize, String recipient, OutputStream stream)
             throws IOException {
         RenderStats stats = new RenderStats();
         long setupStart = SystemClock.elapsedRealtime();
@@ -527,6 +566,7 @@ public class MainActivity extends Activity {
                                 -top);
                         canvas.drawBitmap(fittedFrame, frameTransform, framePaint);
                     }
+                    drawRecipientMessage(canvas, layout, top, rows, recipient);
                     stats.frameMs += SystemClock.elapsedRealtime() - stageStart;
                     stageStart = SystemClock.elapsedRealtime();
                     for (int row = 0; row < rows; row++) {
@@ -555,6 +595,39 @@ public class MainActivity extends Activity {
             if (fittedFrame != null) fittedFrame.recycle();
         }
         return stats;
+    }
+
+    private void drawRecipientMessage(Canvas canvas, Layout layout, int top, int rows, String recipient) {
+        if (recipient == null || recipient.isEmpty()) return;
+        float footerTop = layout.height * 1436f / 1536f;
+        float footerBottom = layout.height * 1501f / 1536f;
+        if (top >= footerBottom || top + rows <= footerTop) return;
+
+        canvas.save();
+        canvas.translate(0, -top);
+        canvas.scale(layout.width / 1024f, layout.height / 1536f);
+        RectF plaque = new RectF(220, 1437, 804, 1500);
+        Paint background = new Paint(Paint.ANTI_ALIAS_FLAG);
+        background.setColor(Color.rgb(19, 17, 14));
+        canvas.drawRoundRect(plaque, 12, 12, background);
+        Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+        border.setColor(Color.rgb(151, 113, 56));
+        border.setStyle(Paint.Style.STROKE);
+        border.setStrokeWidth(1.5f);
+        canvas.drawRoundRect(plaque, 12, 12, border);
+
+        Paint lettering = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
+        lettering.setColor(Color.rgb(234, 194, 120));
+        lettering.setTypeface(Typeface.create("serif", Typeface.ITALIC));
+        lettering.setTextAlign(Paint.Align.CENTER);
+        lettering.setTextSize(23f);
+        String firstLine = "cảm ơn " + recipient;
+        if (lettering.measureText(firstLine) > 540f)
+            lettering.setTextSize(23f * 540f / lettering.measureText(firstLine));
+        canvas.drawText(firstLine, 512, 1461, lettering);
+        lettering.setTextSize(23f);
+        canvas.drawText("đã đến dự lễ tốt nghiệp của mình", 512, 1492, lettering);
+        canvas.restore();
     }
 
     private void drawPart(Canvas canvas, Source source, int top, int rows, Paint paint) throws IOException {
@@ -911,6 +984,7 @@ public class MainActivity extends Activity {
                         new RectF(frameLeft, 0, frameLeft + layout.width * frameWidthScale,
                                 layout.height), imagePaint);
             }
+            drawRecipientMessage(canvas, layout, 0, layout.height, recipientName);
             Rect chosen = cellRect(layout, selectedPhoto);
             selectedPaint.setStrokeWidth(dp(3) / viewScale);
             canvas.drawRect(chosen, selectedPaint);
